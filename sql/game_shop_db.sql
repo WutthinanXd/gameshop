@@ -3,9 +3,9 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 23, 2026 at 01:05 PM
+-- Generation Time: Sep 26, 2026 at 10:29 AM
 -- Server version: 10.4.32-MariaDB
--- PHP Version: 8.0.30
+-- PHP Version: 8.2.12
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -79,6 +79,17 @@ CREATE TABLE `tb_users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
+-- Dumping data for table `tb_users`
+--
+
+INSERT INTO `tb_users` (`user_id`, `username`, `password_hash`, `email`, `role`) VALUES
+(1, 'admin', '$2y$10$kNkO0DUNxDEPVzmdHW3kRO.VwSq.BX8m6COy5inRqKERuGOIcjxja', 'admin@gmail.com', 'admin'),
+(2, 'adminxx', '$2y$10$AquK66ok1epiz8NpOL7cKu45qYHKEVBPNDi9SWM/GgyrNovihlUZS', 'adminxx@gmail.com', 'user'),
+(3, 'adminxx', '$2y$10$6BiMOlzNP2.4OAu3ILcdJe5eK60Kk737e3wZPKeVRkAtJcAarISrm', 'adminxx@gmail.com', 'user'),
+(4, 'seller1', '$2y$10$zZ.rlCWytJWIchMhAyOfAulxot6Y6YPN9XySmelbKXj0SkpUbwThi', 'seller@gmail.com', 'merchant'),
+(5, 'seller1', '$2y$10$2Pk858p1eW36smBwPoLPWuTOFaTt5mPz20UUHd191ZSHgswAxMaG.', 'seller@gmail.com', 'merchant');
+
+--
 -- Indexes for dumped tables
 --
 
@@ -138,7 +149,7 @@ ALTER TABLE `tb_posts`
 -- AUTO_INCREMENT for table `tb_users`
 --
 ALTER TABLE `tb_users`
-  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- Constraints for dumped tables

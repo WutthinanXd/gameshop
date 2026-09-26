@@ -1,4 +1,132 @@
-<?php include 'config/connectDB.php' ?>
+<?php
+require_once __DIR__ . '/config/auth.php';
+require_once __DIR__ . '/config/connectDB.php';
+
+// ตรวจสอบการเข้าสู่ระบบ
+start_app_session();
+require_login();
+
+// ดึงข้อมูลผู้ใช้ปัจจุบันจากเซสชัน
+$current_user_id = $_SESSION['user_id'] ?? 0;
+$current_username = $_SESSION['username'] ?? 'User';
+
+// ดึงบทบาท (Role) ของผู้ใช้ปัจจุบัน
+$role = 'user';
+$user_stmt = mysqli_prepare($conn, "SELECT role FROM tb_users WHERE user_id = ? LIMIT 1");
+mysqli_stmt_bind_param($user_stmt, "i", $current_user_id);
+mysqli_stmt_execute($user_stmt);
+$user_res = mysqli_stmt_get_result($user_stmt);
+if ($u = mysqli_fetch_assoc($user_res)) {
+    $role = $u['role'];
+}
+
+// จัดการการส่งฟอร์ม
+$msg_success = '';
+$msg_error = '';
+
+// สร้างโพสต์ใหม่
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_post') {
+    if ($role === 'merchant' || $role === 'admin') {
+        $game_id    = (int)($_POST['game_id'] ?? 0);
+        $post_title = trim($_POST['post_title'] ?? '');
+        $post_price = (float)($_POST['post_price'] ?? 0);
+        $post_detail= trim($_POST['post_detail'] ?? '');
+        $post_img   = trim($_POST['post_img'] ?? '');
+
+        if ($game_id > 0 && $post_title !== '' && $post_price > 0) {
+            $insert_stmt = mysqli_prepare($conn, "INSERT INTO tb_posts (seller_id, game_id, post_title, post_detail, post_price, post_img, status) VALUES (?, ?, ?, ?, ?, ?, 'availble')");
+            mysqli_stmt_bind_param($insert_stmt, "iissds", $current_user_id, $game_id, $post_title, $post_detail, $post_price, $post_img);
+            
+            if (mysqli_stmt_execute($insert_stmt)) {
+                $msg_success = "ลงประกาศขายไอดีเกมเรียบร้อยแล้ว!";
+            } else {
+                $msg_error = "เกิดข้อผิดพลาดในการลงประกาศ";
+            }
+        } else {
+            $msg_error = "กรุณากรอกข้อมูลสำคัญให้ครบถ้วน";
+        }
+    } else {
+        $msg_error = "คุณไม่มีสิทธิ์ในการลงประกาศขายไอดีเกม";
+    }
+}
+
+// แก้ไขโพสต์
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_post') {
+    $edit_post_id = (int)($_POST['edit_post_id'] ?? 0);
+    
+    // ตรวจสอบว่าเป็นเจ้าของโพสต์หรือ admin
+    $check_stmt = mysqli_prepare($conn, "SELECT seller_id FROM tb_posts WHERE post_id = ? LIMIT 1");
+    mysqli_stmt_bind_param($check_stmt, "i", $edit_post_id);
+    mysqli_stmt_execute($check_stmt);
+    $check_res = mysqli_stmt_get_result($check_stmt);
+    $post_owner = mysqli_fetch_assoc($check_res);
+    
+    if ($post_owner && ($post_owner['seller_id'] == $current_user_id || $role === 'admin')) {
+        $edit_game_id    = (int)($_POST['edit_game_id'] ?? 0);
+        $edit_post_title = trim($_POST['edit_post_title'] ?? '');
+        $edit_post_price = (float)($_POST['edit_post_price'] ?? 0);
+        $edit_post_detail= trim($_POST['edit_post_detail'] ?? '');
+        $edit_post_img   = trim($_POST['edit_post_img'] ?? '');
+        $edit_status     = trim($_POST['edit_status'] ?? 'availble');
+
+        if ($edit_game_id > 0 && $edit_post_title !== '' && $edit_post_price > 0) {
+            $update_stmt = mysqli_prepare($conn, "UPDATE tb_posts SET game_id = ?, post_title = ?, post_detail = ?, post_price = ?, post_img = ?, status = ? WHERE post_id = ?");
+            mysqli_stmt_bind_param($update_stmt, "issdssi", $edit_game_id, $edit_post_title, $edit_post_detail, $edit_post_price, $edit_post_img, $edit_status, $edit_post_id);
+            
+            if (mysqli_stmt_execute($update_stmt)) {
+                $msg_success = "แก้ไขโพสต์เรียบร้อยแล้ว!";
+            } else {
+                $msg_error = "เกิดข้อผิดพลาดในการแก้ไขโพสต์";
+            }
+        } else {
+            $msg_error = "กรุณากรอกข้อมูลสำคัญให้ครบถ้วน";
+        }
+    } else {
+        $msg_error = "คุณไม่มีสิทธิ์ในการแก้ไขโพสต์นี้";
+    }
+}
+
+// ลบโพสต์
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_post') {
+    $del_post_id = (int)($_POST['delete_post_id'] ?? 0);
+    
+    $check_stmt = mysqli_prepare($conn, "SELECT seller_id FROM tb_posts WHERE post_id = ? LIMIT 1");
+    mysqli_stmt_bind_param($check_stmt, "i", $del_post_id);
+    mysqli_stmt_execute($check_stmt);
+    $check_res = mysqli_stmt_get_result($check_stmt);
+    $post_owner = mysqli_fetch_assoc($check_res);
+    
+    if ($post_owner && ($post_owner['seller_id'] == $current_user_id || $role === 'admin')) {
+        $del_stmt = mysqli_prepare($conn, "DELETE FROM tb_posts WHERE post_id = ?");
+        mysqli_stmt_bind_param($del_stmt, "i", $del_post_id);
+        
+        if (mysqli_stmt_execute($del_stmt)) {
+            $msg_success = "ลบโพสต์เรียบร้อยแล้ว!";
+        } else {
+            $msg_error = "เกิดข้อผิดพลาดในการลบโพสต์";
+        }
+    } else {
+        $msg_error = "คุณไม่มีสิทธิ์ในการลบโพสต์นี้";
+    }
+}
+
+// ดึงรายชื่อเกมทั้งหมดเพื่อนำไปใช้ใน Select Dropdown
+$games_list = [];
+$games_query = mysqli_query($conn, "SELECT game_id, game_name FROM tb_games ORDER BY game_name ASC");
+if ($games_query) {
+    while ($g = mysqli_fetch_assoc($games_query)) {
+        $games_list[] = $g;
+    }
+}
+
+// ดึงรายการโพสต์ขายไอดีเกมทั้งหมด พร้อมรายละเอียดผู้ขายและชื่อเกม
+$sql_posts = "SELECT p.*, g.game_name, u.username AS seller_name 
+              FROM tb_posts p
+              JOIN tb_games g ON p.game_id = g.game_id
+              JOIN tb_users u ON p.seller_id = u.user_id
+              ORDER BY p.post_id DESC";
+$posts_result = mysqli_query($conn, $sql_posts);
+?>
 
 <!doctype html>
 <html lang="en">
@@ -105,21 +233,235 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/4.0.0/css/adminlte.min.css" />
     <!--end::Required Plugin(AdminLTE)-->
 
-    <!-- apexcharts -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/apexcharts@3.37.1/dist/apexcharts.css"
-      integrity="sha256-4MX+61mt9NVvvuPjUWdUdyfZfxSB1/Rf9WtqRHgG5S0="
-      crossorigin="anonymous"
-    />
+    <style>
+      /* Social Feed Custom Styles */
+      .social-feed-card {
+        border: none;
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        margin-bottom: 1.5rem;
+      }
+      .social-feed-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+      }
+      .social-feed-card .card-header {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 1rem 1.25rem;
+      }
+      .social-feed-card .card-body {
+        padding: 1rem 1.25rem;
+      }
+      .social-feed-card .card-footer {
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 1rem 1.25rem;
+      }
 
-    <!-- jsvectormap -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/css/jsvectormap.min.css"
-      integrity="sha256-+uGLJmmTKOqBr+2E6KDYs/NRsHxSkONXFHUL0fy2O/4="
-      crossorigin="anonymous"
-    />
+      .post-author-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .post-author-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+      }
+      .post-author-name a {
+        color: #7cacf8;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      .post-author-name a:hover {
+        text-decoration: underline;
+      }
+      .post-meta-info {
+        font-size: 0.8rem;
+        opacity: 0.6;
+      }
+
+      .post-game-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+        border: 1px solid rgba(102, 126, 234, 0.3);
+        color: #a78bfa;
+        font-size: 0.8rem;
+        font-weight: 500;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+      }
+      .post-detail {
+        font-size: 0.9rem;
+        opacity: 0.85;
+        line-height: 1.6;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-price-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 16px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: #fff;
+        font-weight: 700;
+        font-size: 1rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .post-status-badge.available {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+      }
+      .post-status-badge.sold {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+      }
+
+      .post-image-container {
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+        max-height: 300px;
+      }
+      .post-image-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .post-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .post-actions .btn {
+        border-radius: 20px;
+        padding: 4px 14px;
+        font-size: 0.82rem;
+        transition: all 0.2s ease;
+      }
+
+      .btn-create-post {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: #fff;
+        padding: 10px 24px;
+        border-radius: 25px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn-create-post:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        color: #fff;
+      }
+
+      .feed-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      }
+      .feed-header h5 {
+        margin: 0;
+        font-weight: 700;
+        font-size: 1.4rem;
+      }
+
+      .modal-content {
+        border-radius: 16px;
+        border: none;
+      }
+      .modal-header {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 1.25rem 1.5rem;
+      }
+      .modal-body {
+        padding: 1.5rem;
+      }
+      .modal-footer {
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 1rem 1.5rem;
+      }
+
+      .modal .form-label {
+        font-weight: 600;
+        font-size: 0.88rem;
+        margin-bottom: 0.4rem;
+      }
+      .modal .form-control,
+      .modal .form-select {
+        border-radius: 10px;
+        padding: 0.6rem 1rem;
+      }
+
+      .empty-feed {
+        text-align: center;
+        padding: 3rem 2rem;
+        opacity: 0.6;
+      }
+      .empty-feed i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        display: block;
+      }
+
+      .post-owner-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .post-owner-actions .btn {
+        padding: 2px 8px;
+        font-size: 0.78rem;
+        border-radius: 6px;
+      }
+
+      /* Alert animation */
+      .alert-dismissible {
+        animation: slideDown 0.3s ease;
+      }
+      @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+    </style>
   </head>
   <!--end::Head-->
   <!--begin::Body-->
@@ -171,7 +513,7 @@
             <li class="nav-item dropdown user-menu">
               <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown">
                 
-                <span class="d-none d-md-inline">Alexander Pierce</span>
+                <span class="d-none d-md-inline"><?= htmlspecialchars($current_username) ?></span>
               </a>
               <ul class="dropdown-menu dropdown-menu-lg dropdown-menu-end">
                 <!--begin::User Image-->
@@ -203,95 +545,271 @@
         <div class="app-content-header">
           <!--begin::Container-->
           <div class="container-fluid">
-            <!--begin::Row-->
-            <h5 class="mb-3 mt-4">Social feed</h5>
-            <!--begin::Row-->
-            <div class="row g-4">
-              <!--begin::Col-->
-              <div class="col-lg-6">
-                <!--begin::Social Widget-->
-                <div class="card mb-0">
-                  <!--begin::Card Header-->
-                  <div class="card-header">
-                    <div class="user-block">
-                      <img class="rounded-circle" src="../assets/img/user1-128x128.jpg" alt="" />
-                      <span class="username">
-                        <a href="#">Jonathan Burke Jr.</a>
-                      </span>
-                      <span class="description">Shared publicly &middot; 7:30 PM today</span>
+
+            <!-- Alert Messages -->
+            <?php if ($msg_success): ?>
+              <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i><?= htmlspecialchars($msg_success) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+              </div>
+            <?php endif; ?>
+            <?php if ($msg_error): ?>
+              <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i><?= htmlspecialchars($msg_error) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+              </div>
+            <?php endif; ?>
+
+            <!--begin::Feed Header-->
+            <div class="feed-header mt-4">
+              <h5><i class="bi bi-rss me-2"></i>Social feed</h5>
+              <?php if ($role === 'merchant' || $role === 'admin'): ?>
+                <button type="button" class="btn btn-create-post" data-bs-toggle="modal" data-bs-target="#createPostModal">
+                  <i class="bi bi-plus-circle"></i> สร้างโพสต์ขาย
+                </button>
+              <?php endif; ?>
+            </div>
+            <!--end::Feed Header-->
+
+            <!--begin::Posts Feed-->
+            <div class="row">
+              <div class="col-lg-8 col-xl-7">
+
+                <?php if ($posts_result && mysqli_num_rows($posts_result) > 0): ?>
+                  <?php while ($post = mysqli_fetch_assoc($posts_result)): ?>
+                    <div class="card social-feed-card">
+                      <!--begin::Card Header-->
+                      <div class="card-header d-flex justify-content-between align-items-start">
+                        <div class="post-author-info">
+                          <div class="post-author-avatar">
+                            <?= strtoupper(mb_substr($post['seller_name'], 0, 1)) ?>
+                          </div>
+                          <div>
+                            <div class="post-author-name">
+                              <a href="#"><?= htmlspecialchars($post['seller_name']) ?></a>
+                            </div>
+                            <div class="post-meta-info">
+                              Shared publicly &middot; Post #<?= $post['post_id'] ?>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                          <span class="post-status-badge <?= $post['status'] === 'availble' ? 'available' : 'sold' ?>">
+                            <i class="bi <?= $post['status'] === 'availble' ? 'bi-check-circle' : 'bi-x-circle' ?>"></i>
+                            <?= $post['status'] === 'availble' ? 'พร้อมขาย' : 'ขายแล้ว' ?>
+                          </span>
+                          <?php if ($post['seller_id'] == $current_user_id || $role === 'admin'): ?>
+                            <div class="post-owner-actions">
+                              <button type="button" class="btn btn-sm btn-outline-warning btn-edit-post"
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editPostModal"
+                                data-post-id="<?= $post['post_id'] ?>"
+                                data-game-id="<?= $post['game_id'] ?>"
+                                data-post-title="<?= htmlspecialchars($post['post_title'], ENT_QUOTES) ?>"
+                                data-post-detail="<?= htmlspecialchars($post['post_detail'], ENT_QUOTES) ?>"
+                                data-post-price="<?= $post['post_price'] ?>"
+                                data-post-img="<?= htmlspecialchars($post['post_img'], ENT_QUOTES) ?>"
+                                data-post-status="<?= $post['status'] ?>"
+                                title="แก้ไข"
+                              >
+                                <i class="bi bi-pencil"></i>
+                              </button>
+                              <form method="POST" action="index.php" class="d-inline" onsubmit="return confirm('คุณต้องการลบโพสต์นี้หรือไม่?');">
+                                <input type="hidden" name="action" value="delete_post">
+                                <input type="hidden" name="delete_post_id" value="<?= $post['post_id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="ลบ">
+                                  <i class="bi bi-trash"></i>
+                                </button>
+                              </form>
+                            </div>
+                          <?php endif; ?>
+                        </div>
+                      </div>
+                      <!--end::Card Header-->
+
+                      <!--begin::Card Body-->
+                      <div class="card-body">
+                        <?php if (!empty($post['post_img'])): ?>
+                          <div class="post-image-container">
+                            <img src="<?= htmlspecialchars($post['post_img']) ?>" alt="<?= htmlspecialchars($post['post_title']) ?>" class="img-fluid" />
+                          </div>
+                        <?php endif; ?>
+
+                        <div class="post-game-badge">
+                          <i class="bi bi-controller"></i>
+                          <?= htmlspecialchars($post['game_name']) ?>
+                        </div>
+
+                        <div class="post-title"><?= htmlspecialchars($post['post_title']) ?></div>
+
+                        <?php if (!empty($post['post_detail'])): ?>
+                          <p class="post-detail"><?= nl2br(htmlspecialchars($post['post_detail'])) ?></p>
+                        <?php endif; ?>
+
+                        <div class="post-price-tag">
+                          <i class="bi bi-tag-fill"></i>
+                          ฿<?= number_format($post['post_price'], 2) ?>
+                        </div>
+                      </div>
+                      <!--end::Card Body-->
+
+                      <!--begin::Card Footer-->
+                      <div class="card-footer">
+                        <div class="post-actions">
+                          <button type="button" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-share me-1" aria-hidden="true"></i> Share
+                          </button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-hand-thumbs-up me-1" aria-hidden="true"></i> Like
+                          </button>
+                          <button type="button" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-cart-plus me-1" aria-hidden="true"></i> สนใจซื้อ
+                          </button>
+                        </div>
+                      </div>
+                      <!--end::Card Footer-->
                     </div>
-                    <div class="card-tools">
-                      <button
-                        type="button"
-                        class="btn btn-tool"
-                        data-lte-toggle="card-collapse"
-                        aria-label="Collapse card"
-                      >
-                        <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
-                        <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
-                      </button>
+                  <?php endwhile; ?>
+                <?php else: ?>
+                  <div class="card social-feed-card">
+                    <div class="card-body empty-feed">
+                      <i class="bi bi-inbox"></i>
+                      <h5>ยังไม่มีโพสต์ขายไอดีเกม</h5>
+                      <p class="text-secondary">เริ่มสร้างโพสต์ขายเพื่อเริ่มต้นใช้งาน!</p>
                     </div>
                   </div>
-                  <!--end::Card Header-->
-                  <!--begin::Card Body-->
-                  <div class="card-body">
-                    <img class="img-fluid rounded mb-3" src="../assets/img/photo1.png" alt="" />
-                    <p>I took this photo this morning. What do you guys think?</p>
-                    <button type="button" class="btn btn-sm btn-outline-secondary me-1">
-                      <i class="bi bi-share me-1" aria-hidden="true"></i> Share
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary">
-                      <i class="bi bi-hand-thumbs-up me-1" aria-hidden="true"></i> Like
-                    </button>
-                    <span class="float-end text-secondary">45 likes &middot; 2 comments</span>
-                  </div>
-                  <!--end::Card Body-->
-                  <!--begin::Card Footer-->
-                  <div class="card-footer">
-                    <div class="user-block user-block-sm mb-3">
-                      <img class="rounded-circle" src="../assets/img/user4-128x128.jpg" alt="" />
-                      <span class="username"><a href="#">Maria Gonzales</a></span>
-                      <span class="description">Posted 5 minutes ago</span>
-                      <span class="comment">
-                        It is a long established fact that a reader will be distracted by the
-                        readable content of a page.
-                      </span>
-                    </div>
-                    <div class="user-block user-block-sm">
-                      <img class="rounded-circle" src="../assets/img/user5-128x128.jpg" alt="" />
-                      <span class="username"><a href="#">Nora Havisham</a></span>
-                      <span class="description">Posted 27 minutes ago</span>
-                      <span class="comment">
-                        The point of using Lorem Ipsum is that it has a more-or-less normal
-                        distribution of letters.
-                      </span>
-                    </div>
-                    <!--begin::Comment Form-->
-                    <form class="mt-3">
-                      <label for="social-comment" class="visually-hidden"> Write a comment </label>
-                      <input
-                        type="text"
-                        id="social-comment"
-                        class="form-control form-control-sm"
-                        placeholder="Type a comment"
-                      />
-                    </form>
-                    <!--end::Comment Form-->
-                  </div>
-                  <!--end::Card Footer-->
-                </div>
-        
-        
+                <?php endif; ?>
+
+              </div>
+            </div>
+            <!--end::Posts Feed-->
+
+          </div>
+          <!--end::Container-->
+        </div>
         <!--end::App Content Header-->
-         
-        <!--begin::App Content-->
-        <div class="app-content">
-          <!--begin::Container-->
-          <div class="container-fluid">
-            
-        <!--end::App Content-->
       </main>
       <!--end::App Main-->
+
+      <!--begin::Create Post Modal-->
+      <div class="modal fade" id="createPostModal" tabindex="-1" aria-labelledby="createPostModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <form method="POST" action="index.php">
+              <input type="hidden" name="action" value="create_post">
+              <div class="modal-header">
+                <h5 class="modal-title" id="createPostModalLabel">
+                  <i class="bi bi-plus-circle me-2"></i>สร้างโพสต์ขายไอดีเกม
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label for="create_game_id" class="form-label">เกม <span class="text-danger">*</span></label>
+                    <select class="form-select" id="create_game_id" name="game_id" required>
+                      <option value="">-- เลือกเกม --</option>
+                      <?php foreach ($games_list as $game): ?>
+                        <option value="<?= $game['game_id'] ?>"><?= htmlspecialchars($game['game_name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="create_post_price" class="form-label">ราคา (บาท) <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0" class="form-control" id="create_post_price" name="post_price" placeholder="เช่น 500.00" required>
+                  </div>
+                  <div class="col-12">
+                    <label for="create_post_title" class="form-label">หัวข้อโพสต์ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="create_post_title" name="post_title" placeholder="เช่น ขายไอดี Genshin Impact AR 60" required>
+                  </div>
+                  <div class="col-12">
+                    <label for="create_post_detail" class="form-label">รายละเอียดเพิ่มเติม</label>
+                    <textarea class="form-control" id="create_post_detail" name="post_detail" rows="4" placeholder="อธิบายรายละเอียดไอดีเกมที่จะขาย..."></textarea>
+                  </div>
+                  <div class="col-12">
+                    <label for="create_post_img" class="form-label">URL รูปภาพ</label>
+                    <input type="url" class="form-control" id="create_post_img" name="post_img" placeholder="https://example.com/image.jpg">
+                    <div class="form-text">วาง URL รูปภาพเพื่อแสดงในโพสต์</div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                  <i class="bi bi-x-lg me-1"></i>ยกเลิก
+                </button>
+                <button type="submit" class="btn btn-create-post">
+                  <i class="bi bi-check-lg me-1"></i>ลงประกาศขาย
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <!--end::Create Post Modal-->
+
+      <!--begin::Edit Post Modal-->
+      <div class="modal fade" id="editPostModal" tabindex="-1" aria-labelledby="editPostModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <form method="POST" action="index.php">
+              <input type="hidden" name="action" value="edit_post">
+              <input type="hidden" name="edit_post_id" id="edit_post_id">
+              <div class="modal-header">
+                <h5 class="modal-title" id="editPostModalLabel">
+                  <i class="bi bi-pencil-square me-2"></i>แก้ไขโพสต์
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label for="edit_game_id" class="form-label">เกม <span class="text-danger">*</span></label>
+                    <select class="form-select" id="edit_game_id" name="edit_game_id" required>
+                      <option value="">-- เลือกเกม --</option>
+                      <?php foreach ($games_list as $game): ?>
+                        <option value="<?= $game['game_id'] ?>"><?= htmlspecialchars($game['game_name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="edit_post_price" class="form-label">ราคา (บาท) <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0" class="form-control" id="edit_post_price" name="edit_post_price" required>
+                  </div>
+                  <div class="col-12">
+                    <label for="edit_post_title" class="form-label">หัวข้อโพสต์ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="edit_post_title" name="edit_post_title" required>
+                  </div>
+                  <div class="col-12">
+                    <label for="edit_post_detail" class="form-label">รายละเอียดเพิ่มเติม</label>
+                    <textarea class="form-control" id="edit_post_detail" name="edit_post_detail" rows="4"></textarea>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="edit_post_img" class="form-label">URL รูปภาพ</label>
+                    <input type="url" class="form-control" id="edit_post_img" name="edit_post_img">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="edit_status" class="form-label">สถานะ</label>
+                    <select class="form-select" id="edit_status" name="edit_status">
+                      <option value="availble">พร้อมขาย</option>
+                      <option value="sold">ขายแล้ว</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                  <i class="bi bi-x-lg me-1"></i>ยกเลิก
+                </button>
+                <button type="submit" class="btn btn-warning">
+                  <i class="bi bi-check-lg me-1"></i>บันทึกการแก้ไข
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <!--end::Edit Post Modal-->
+
       <!--begin::Footer-->
       <footer class="app-footer">
         <!--begin::To the end-->
@@ -325,7 +843,7 @@
       crossorigin="anonymous"
     ></script>
     <!--end::Required Plugin(Bootstrap 5)--><!--begin::Required Plugin(AdminLTE)-->
-    <script src="./node_modules/admin-lte/dist/js/adminlte.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/4.0.0/js/adminlte.min.js"></script>
     <!--end::Required Plugin(AdminLTE)-->
     <!--begin::OverlayScrollbars Configure-->
     <script>
@@ -357,239 +875,39 @@
       });
     </script>
     <!--end::OverlayScrollbars Configure-->
-    <!--begin::Charts follow the colour mode-->
+
+    <!--begin::Edit Post Modal Script-->
     <script>
-      // ApexCharts draws light-theme tooltips and axis text unless told otherwise,
-      // which is unreadable in dark mode (#6105). Give it the page's colour mode as
-      // a global default before any chart is created — this runs before the chart
-      // pages' own scripts — and keep every chart that has a `chart.id` in step
-      // when the mode changes (ColorMode, the OS in auto mode, or your own code).
-      (() => {
-        'use strict';
-        const mode = () =>
-          document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
-        // `Apex` is ApexCharts' global-options object; it must exist before the library loads.
-        // theme.mode also sets a dark chart background — keep the card's instead.
-        // eslint-disable-next-line unicorn/no-global-object-property-assignment
-        globalThis.Apex ||= {};
-        const apex = globalThis.Apex;
-        apex.theme = { mode: mode() };
-        apex.chart = Object.assign(apex.chart || {}, { background: 'transparent' });
-        new MutationObserver(() => {
-          const next = mode();
-          apex.theme = { mode: next };
-          const instances = apex._chartInstances || [];
-          for (const { chart } of instances) {
-            chart.updateOptions({ theme: { mode: next } }, false, false);
-          }
-        }).observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ['data-bs-theme'],
+      // Populate the edit modal with post data when the edit button is clicked
+      document.addEventListener('DOMContentLoaded', function () {
+        const editPostModal = document.getElementById('editPostModal');
+        if (editPostModal) {
+          editPostModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            if (!button) return;
+
+            document.getElementById('edit_post_id').value = button.getAttribute('data-post-id') || '';
+            document.getElementById('edit_game_id').value = button.getAttribute('data-game-id') || '';
+            document.getElementById('edit_post_title').value = button.getAttribute('data-post-title') || '';
+            document.getElementById('edit_post_detail').value = button.getAttribute('data-post-detail') || '';
+            document.getElementById('edit_post_price').value = button.getAttribute('data-post-price') || '';
+            document.getElementById('edit_post_img').value = button.getAttribute('data-post-img') || '';
+            document.getElementById('edit_status').value = button.getAttribute('data-post-status') || 'availble';
+          });
+        }
+
+        // Auto-dismiss alerts after 5 seconds
+        const alerts = document.querySelectorAll('.alert-dismissible');
+        alerts.forEach(function (alert) {
+          setTimeout(function () {
+            const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+            bsAlert.close();
+          }, 5000);
         });
-      })();
-    </script>
-    <!--end::Charts follow the colour mode-->
-
-    <!--begin::Color Mode Toggle-->
-    <!-- The light/dark/auto switcher ships in adminlte.js as the ColorMode
-     module (since 4.1) — no page script needed. Only the no-flash snippet
-     in <head> stays inline, because it must run before first paint. -->
-    <!--end::Color Mode Toggle-->
-
-    <!-- OPTIONAL SCRIPTS -->
-
-    <!-- sortablejs -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"
-      crossorigin="anonymous"
-    ></script>
-    <!-- sortablejs -->
-    <script>
-      new Sortable(document.querySelector('.connectedSortable'), {
-        group: 'shared',
-        handle: '.card-header',
-      });
-
-      const cardHeaders = document.querySelectorAll('.connectedSortable .card-header');
-      cardHeaders.forEach((cardHeader) => {
-        cardHeader.style.cursor = 'move';
       });
     </script>
-    <!-- apexcharts -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/apexcharts@3.37.1/dist/apexcharts.min.js"
-      integrity="sha256-+vh8GkaU7C9/wbSLIcwq82tQ2wTf44aOHA8HlBMwRI8="
-      crossorigin="anonymous"
-    ></script>
-    <!-- ChartJS -->
-    <script>
-      // NOTICE!! DO NOT USE ANY OF THIS JAVASCRIPT
-      // IT'S ALL JUST JUNK FOR DEMO
-      // ++++++++++++++++++++++++++++++++++++++++++
-
-      const sales_chart_options = {
-        series: [
-          {
-            name: 'Digital Goods',
-            data: [28, 48, 40, 19, 86, 27, 90],
-          },
-          {
-            name: 'Electronics',
-            data: [65, 59, 80, 81, 56, 55, 40],
-          },
-        ],
-        chart: {
-          id: 'revenue-chart',
-          height: 300,
-          type: 'area',
-          toolbar: {
-            show: false,
-          },
-        },
-        legend: {
-          show: false,
-        },
-        colors: ['#0d6efd', '#20c997'],
-        dataLabels: {
-          enabled: false,
-        },
-        stroke: {
-          curve: 'smooth',
-        },
-        xaxis: {
-          type: 'datetime',
-          categories: [
-            '2023-01-01',
-            '2023-02-01',
-            '2023-03-01',
-            '2023-04-01',
-            '2023-05-01',
-            '2023-06-01',
-            '2023-07-01',
-          ],
-        },
-        tooltip: {
-          x: {
-            format: 'MMMM yyyy',
-          },
-        },
-      };
-
-      const sales_chart = new ApexCharts(
-        document.querySelector('#revenue-chart'),
-        sales_chart_options,
-      );
-      sales_chart.render();
-    </script>
-    <!-- jsvectormap -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/js/jsvectormap.min.js"
-      integrity="sha256-/t1nN2956BT869E6H4V1dnt0X5pAQHPytli+1nTZm2Y="
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/maps/world.js"
-      integrity="sha256-XPpPaZlU8S/HWf7FZLAncLg2SAkP8ScUTII89x9D3lY="
-      crossorigin="anonymous"
-    ></script>
-    <!-- jsvectormap -->
-    <script>
-      // World map by jsVectorMap
-      new jsVectorMap({
-        selector: '#world-map',
-        map: 'world',
-      });
-
-      // Sparkline charts
-      const option_sparkline1 = {
-        series: [
-          {
-            data: [1000, 1200, 920, 927, 931, 1027, 819, 930, 1021],
-          },
-        ],
-        chart: {
-          id: 'sparkline-1',
-          type: 'area',
-          height: 50,
-          sparkline: {
-            enabled: true,
-          },
-        },
-        stroke: {
-          curve: 'straight',
-        },
-        fill: {
-          opacity: 0.3,
-        },
-        yaxis: {
-          min: 0,
-        },
-        colors: ['#DCE6EC'],
-      };
-
-      const sparkline1 = new ApexCharts(document.querySelector('#sparkline-1'), option_sparkline1);
-      sparkline1.render();
-
-      const option_sparkline2 = {
-        series: [
-          {
-            data: [515, 519, 520, 522, 652, 810, 370, 627, 319, 630, 921],
-          },
-        ],
-        chart: {
-          id: 'sparkline-2',
-          type: 'area',
-          height: 50,
-          sparkline: {
-            enabled: true,
-          },
-        },
-        stroke: {
-          curve: 'straight',
-        },
-        fill: {
-          opacity: 0.3,
-        },
-        yaxis: {
-          min: 0,
-        },
-        colors: ['#DCE6EC'],
-      };
-
-      const sparkline2 = new ApexCharts(document.querySelector('#sparkline-2'), option_sparkline2);
-      sparkline2.render();
-
-      const option_sparkline3 = {
-        series: [
-          {
-            data: [15, 19, 20, 22, 33, 27, 31, 27, 19, 30, 21],
-          },
-        ],
-        chart: {
-          id: 'sparkline-3',
-          type: 'area',
-          height: 50,
-          sparkline: {
-            enabled: true,
-          },
-        },
-        stroke: {
-          curve: 'straight',
-        },
-        fill: {
-          opacity: 0.3,
-        },
-        yaxis: {
-          min: 0,
-        },
-        colors: ['#DCE6EC'],
-      };
-
-      const sparkline3 = new ApexCharts(document.querySelector('#sparkline-3'), option_sparkline3);
-      sparkline3.render();
-    </script>
+    <!--end::Edit Post Modal Script-->
     <!--end::Script-->
   </body>
   <!--end::Body-->
 </html>
-
