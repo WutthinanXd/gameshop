@@ -6,8 +6,9 @@ start_app_session();
 require_login();
 
 $current_user_id = $_SESSION['user_id'] ?? 0;
+$current_username = $_SESSION['username'] ?? 'User';
 
-// ดึงข้อมูลสิทธิ์ (role) ของผู้ใช้จากฐานข้อมูล
+// ดึง Role ของผู้ใช้ปัจจุบัน
 $role = 'user';
 $user_stmt = mysqli_prepare($conn, "SELECT role FROM tb_users WHERE user_id = ? LIMIT 1");
 mysqli_stmt_bind_param($user_stmt, "i", $current_user_id);
@@ -17,43 +18,180 @@ if ($u = mysqli_fetch_assoc($user_res)) {
     $role = $u['role'];
 }
 
-// ถ้าสิทธิ์ไม่ใช่ admin ให้เด้งกลับไปหน้า index.php
+// ตรวจสอบสิทธิ์ ถ้าไม่ใช่ admin ให้เด้งกลับไป index.php
 if ($role !== 'admin') {
     header('Location: index.php');
     exit;
 }
+
+$msg_success = '';
+$msg_error = '';
+
+// การจัดการโพสต์สำหรับ Admin (สร้าง)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_post') {
+    $game_id    = (int)($_POST['game_id'] ?? 0);
+    $post_title = trim($_POST['post_title'] ?? '');
+    $post_price = (float)($_POST['post_price'] ?? 0);
+    $post_detail= trim($_POST['post_detail'] ?? '');
+    $post_img   = '';
+
+    if (isset($_FILES['post_img']) && $_FILES['post_img']['error'] === UPLOAD_ERR_OK) {
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        $file_type = $_FILES['post_img']['type'];
+        $file_size = $_FILES['post_img']['size'];
+        $max_size  = 5 * 1024 * 1024; // 5MB
+
+        if (in_array($file_type, $allowed_types) && $file_size <= $max_size) {
+            $ext = pathinfo($_FILES['post_img']['name'], PATHINFO_EXTENSION);
+            $new_filename = 'post_' . time() . '_' . uniqid() . '.' . $ext;
+            $upload_dir  = __DIR__ . '/upload/';
+            $upload_path = $upload_dir . $new_filename;
+
+            if (move_uploaded_file($_FILES['post_img']['tmp_name'], $upload_path)) {
+                $post_img = 'upload/' . $new_filename;
+            } else {
+                $msg_error = "เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ";
+            }
+        } else {
+            $msg_error = "รูปภาพต้องเป็นไฟล์ JPG, PNG, GIF หรือ WebP ขนาดไม่เกิน 5MB";
+        }
+    }
+
+    if ($msg_error === '' && $game_id > 0 && $post_title !== '' && $post_price > 0) {
+        $insert_stmt = mysqli_prepare($conn, "INSERT INTO tb_posts (seller_id, game_id, post_title, post_detail, post_price, post_img, status) VALUES (?, ?, ?, ?, ?, ?, 'availble')");
+        mysqli_stmt_bind_param($insert_stmt, "iissds", $current_user_id, $game_id, $post_title, $post_detail, $post_price, $post_img);
+        
+        if (mysqli_stmt_execute($insert_stmt)) {
+            $msg_success = "ลงประกาศขายไอดีเกมเรียบร้อยแล้ว!";
+        } else {
+            $msg_error = "เกิดข้อผิดพลาดในการลงประกาศ";
+        }
+    } else if ($msg_error === '') {
+        $msg_error = "กรุณากรอกข้อมูลสำคัญให้ครบถ้วน";
+    }
+}
+
+// การจัดการโพสต์สำหรับ Admin (แก้ไขโพสต์ของใครก็ได้)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_post') {
+    $edit_post_id = (int)($_POST['edit_post_id'] ?? 0);
+    
+    $check_stmt = mysqli_prepare($conn, "SELECT seller_id, post_img FROM tb_posts WHERE post_id = ? LIMIT 1");
+    mysqli_stmt_bind_param($check_stmt, "i", $edit_post_id);
+    mysqli_stmt_execute($check_stmt);
+    $check_res = mysqli_stmt_get_result($check_stmt);
+    $post_owner = mysqli_fetch_assoc($check_res);
+    
+    if ($post_owner) { // Admin สามารถแก้ไขได้หมด
+        $edit_game_id    = (int)($_POST['edit_game_id'] ?? 0);
+        $edit_post_title = trim($_POST['edit_post_title'] ?? '');
+        $edit_post_price = (float)($_POST['edit_post_price'] ?? 0);
+        $edit_post_detail= trim($_POST['edit_post_detail'] ?? '');
+        $edit_post_img   = $post_owner['post_img']; // คงรูปเดิมไว้ก่อน
+        $edit_status     = trim($_POST['edit_status'] ?? 'availble');
+
+        if (isset($_FILES['edit_post_img']) && $_FILES['edit_post_img']['error'] === UPLOAD_ERR_OK) {
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $file_type = $_FILES['edit_post_img']['type'];
+            $file_size = $_FILES['edit_post_img']['size'];
+            $max_size  = 5 * 1024 * 1024; // 5MB
+
+            if (in_array($file_type, $allowed_types) && $file_size <= $max_size) {
+                $ext = pathinfo($_FILES['edit_post_img']['name'], PATHINFO_EXTENSION);
+                $new_filename = 'post_' . time() . '_' . uniqid() . '.' . $ext;
+                $upload_dir  = __DIR__ . '/upload/';
+                $upload_path = $upload_dir . $new_filename;
+
+                if (move_uploaded_file($_FILES['edit_post_img']['tmp_name'], $upload_path)) {
+                    if (!empty($post_owner['post_img']) && file_exists(__DIR__ . '/' . $post_owner['post_img'])) {
+                        unlink(__DIR__ . '/' . $post_owner['post_img']);
+                    }
+                    $edit_post_img = 'upload/' . $new_filename;
+                } else {
+                    $msg_error = "เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ";
+                }
+            } else {
+                $msg_error = "รูปภาพต้องเป็นไฟล์ JPG, PNG, GIF หรือ WebP ขนาดไม่เกิน 5MB";
+            }
+        }
+
+        if ($msg_error === '' && $edit_game_id > 0 && $edit_post_title !== '' && $edit_post_price > 0) {
+            $update_stmt = mysqli_prepare($conn, "UPDATE tb_posts SET game_id = ?, post_title = ?, post_detail = ?, post_price = ?, post_img = ?, status = ? WHERE post_id = ?");
+            mysqli_stmt_bind_param($update_stmt, "issdssi", $edit_game_id, $edit_post_title, $edit_post_detail, $edit_post_price, $edit_post_img, $edit_status, $edit_post_id);
+            
+            if (mysqli_stmt_execute($update_stmt)) {
+                $msg_success = "แก้ไขโพสต์เรียบร้อยแล้ว!";
+            } else {
+                $msg_error = "เกิดข้อผิดพลาดในการแก้ไขโพสต์";
+            }
+        } else if ($msg_error === '') {
+            $msg_error = "กรุณากรอกข้อมูลสำคัญให้ครบถ้วน";
+        }
+    } else {
+        $msg_error = "ไม่พบโพสต์นี้";
+    }
+}
+
+// การจัดการโพสต์สำหรับ Admin (ลบโพสต์ของใครก็ได้)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_post') {
+    $del_post_id = (int)($_POST['delete_post_id'] ?? 0);
+    
+    $check_stmt = mysqli_prepare($conn, "SELECT seller_id FROM tb_posts WHERE post_id = ? LIMIT 1");
+    mysqli_stmt_bind_param($check_stmt, "i", $del_post_id);
+    mysqli_stmt_execute($check_stmt);
+    $check_res = mysqli_stmt_get_result($check_stmt);
+    $post_owner = mysqli_fetch_assoc($check_res);
+    
+    if ($post_owner) { // Admin สามารถลบได้หมด
+        $del_stmt = mysqli_prepare($conn, "DELETE FROM tb_posts WHERE post_id = ?");
+        mysqli_stmt_bind_param($del_stmt, "i", $del_post_id);
+        
+        if (mysqli_stmt_execute($del_stmt)) {
+            $msg_success = "ลบโพสต์เรียบร้อยแล้ว (จัดการโดยแอดมิน)!";
+        } else {
+            $msg_error = "เกิดข้อผิดพลาดในการลบโพสต์";
+        }
+    } else {
+        $msg_error = "ไม่พบโพสต์ที่ต้องการลบ";
+    }
+}
+
+$games_list = [];
+$games_query = mysqli_query($conn, "SELECT game_id, game_name FROM tb_games ORDER BY game_name ASC");
+if ($games_query) {
+    while ($g = mysqli_fetch_assoc($games_query)) {
+        $games_list[] = $g;
+    }
+}
+
+$sql_posts = "SELECT p.*, g.game_name, u.username AS seller_name 
+              FROM tb_posts p
+              JOIN tb_games g ON p.game_id = g.game_id
+              JOIN tb_users u ON p.seller_id = u.user_id
+              ORDER BY p.post_id DESC";
+$posts_result = mysqli_query($conn, $sql_posts);
 ?>
-<!doctype html>
-<html lang="en">
-<!-- โค้ด HTML เดิมของคุณต่อจากตรงนี้... -->
 
 <!doctype html>
-<html lang="en">
+<html lang="th">
+  <!--begin::Head-->
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>AdminLTE 4 | Projects</title>
+    <title>Admin Dashboard | GameShop</title>
 
-    <!--begin::Theme Init (prevents flash of incorrect theme on load, #6043)-->
+    <!--begin::Theme Init-->
     <script>
       (() => {
         'use strict';
         const root = document.documentElement;
-
-        // Applications with their own theming opt out of AdminLTE's color mode
-        // entirely, here as well as in the bundle.
         if (root.getAttribute('data-lte-color-mode') === 'off') {
           return;
         }
-
         const STORAGE_KEY = 'lte-theme';
         let stored = null;
         try {
           stored = localStorage.getItem(STORAGE_KEY);
         } catch {
-          // localStorage may be unavailable (private mode, sandboxed iframe).
         }
-        // Mirror the precedence in color-mode.ts: the visitor's stored choice
-        // wins, then a theme this page declared itself, then the OS preference.
         const authored = root.getAttribute('data-bs-theme');
         let resolved = 'light';
         if (stored === 'dark' || stored === 'light') {
@@ -65,8 +203,6 @@ if ($role !== 'admin') {
         }
         root.setAttribute('data-bs-theme', resolved);
         root.style.colorScheme = resolved;
-        // Flag values computed here, so the bundle does not mistake them for a
-        // theme the page declared and stop following the OS preference.
         if (resolved !== authored) {
           root.setAttribute('data-lte-theme-resolved', '');
         }
@@ -74,1034 +210,454 @@ if ($role !== 'admin') {
     </script>
     <!--end::Theme Init-->
 
-    <!--begin::Accessibility Meta Tags-->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#007bff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
-    <!--end::Accessibility Meta Tags-->
-
-    <!--begin::Primary Meta Tags-->
-    <meta name="title" content="AdminLTE 4 | Projects" />
-    <meta name="author" content="ColorlibHQ" />
-    <meta
-      name="description"
-      content="AdminLTE is a free Bootstrap 5 admin dashboard template with almost 50 example pages, built with vanilla JS and designed with accessibility in mind."
-    />
-    <meta
-      name="keywords"
-      content="bootstrap 5, bootstrap, bootstrap 5 admin dashboard, bootstrap 5 dashboard, bootstrap 5 charts, bootstrap 5 calendar, bootstrap 5 datepicker, bootstrap 5 tables, bootstrap 5 datatable, vanilla js datatable, colorlibhq, colorlibhq dashboard, colorlibhq admin dashboard, accessible admin panel"
-    />
-    <!--end::Primary Meta Tags-->
-
-    <!--begin::Accessibility Features-->
-    <!-- Skip links will be dynamically added by accessibility.js -->
-    <meta name="supported-color-schemes" content="light dark" />
-    <link rel="preload" href="../css/adminlte.css" as="style" />
-    <!--end::Accessibility Features-->
-
-    <!--begin::Fonts-->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@fontsource/source-sans-3@5.0.12/index.css"
-      integrity="sha256-tXJfXfp6Ewt1ilPzLDtQnJV4hclT9XuaZUKyUvmyr+Q="
-      crossorigin="anonymous"
-      media="print"
-      onload="this.media = 'all'"
-    />
-    <!--end::Fonts-->
-
-    <!--begin::Third Party Plugin(OverlayScrollbars)-->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/styles/overlayscrollbars.min.css"
-      crossorigin="anonymous"
-    />
-    <!--end::Third Party Plugin(OverlayScrollbars)-->
-
-    <!--begin::Third Party Plugin(Bootstrap Icons)-->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
-      crossorigin="anonymous"
-    />
-    <!--end::Third Party Plugin(Bootstrap Icons)-->
-
-    <!--begin::Required Plugin(AdminLTE)-->
+    
+    <!--begin::Fonts & Plugins-->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/source-sans-3@5.0.12/index.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/styles/overlayscrollbars.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/4.0.0/css/adminlte.min.css" />
-    <!--end::Required Plugin(AdminLTE)-->
+    <!--end::Fonts & Plugins-->
+
+    <style>
+      /* Social Feed Simple Styles (Match index.php) */
+      .social-feed-card {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
+      }
+      .social-feed-card .card-header,
+      .social-feed-card .card-body,
+      .social-feed-card .card-footer {
+        padding: 1rem;
+      }
+
+      .post-author-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .post-author-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: #6c757d;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 600;
+        font-size: 1rem;
+        flex-shrink: 0;
+      }
+      .post-author-name a {
+        color: inherit;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .post-meta-info {
+        font-size: 0.8rem;
+        color: #6c757d;
+      }
+
+      .post-game-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background-color: #e9ecef;
+        color: #495057;
+        font-size: 0.8rem;
+        font-weight: 500;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+      .post-detail {
+        font-size: 0.9rem;
+        line-height: 1.5;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-price-tag {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 4px;
+        background-color: #198754;
+        color: #fff;
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .post-status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .post-status-badge.available {
+        background-color: #d1e7dd;
+        color: #0f5132;
+      }
+      .post-status-badge.sold {
+        background-color: #f8d7da;
+        color: #842029;
+      }
+
+      .post-image-container {
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+        max-height: 300px;
+      }
+      .post-image-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .post-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .feed-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      }
+      .feed-header h5 {
+        margin: 0;
+        font-weight: 600;
+      }
+
+      .empty-feed {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: #6c757d;
+      }
+      .empty-feed i {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        display: block;
+      }
+
+      .post-owner-actions {
+        display: flex;
+        gap: 4px;
+      }
+    </style>
   </head>
+  <!--end::Head-->
+  <!--begin::Body-->
   <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
+    <!--begin::App Wrapper-->
     <div class="app-wrapper">
       <!--begin::Header-->
       <nav class="app-header navbar navbar-expand bg-body">
-        <!--begin::Container-->
         <div class="container-fluid">
-          <!--begin::Start Navbar Links-->
           <ul class="navbar-nav">
             <li class="nav-item">
-              <a
-                class="nav-link"
-                data-lte-toggle="sidebar"
-                href="#"
-                role="button"
-                aria-label="Toggle sidebar"
-              >
-                <i class="bi bi-list"></i>
-              </a>
+              <a class="nav-link" data-lte-toggle="sidebar" href="#" role="button"><i class="bi bi-list"></i></a>
             </li>
-
-            
           </ul>
-          <!--end::Start Navbar Links-->
-
-          <!--begin::Navbar Search-->
-          <form
-            class="navbar-search d-none d-md-block ms-3"
-            role="search"
-            action="../pages/search-results.html"
-          >
-            
-          </form>
-          <!--end::Navbar Search-->
-
-          <!--begin::End Navbar Links-->
           <ul class="navbar-nav ms-auto">
-            <!--begin::Search (small screens: the field above is hidden, so link to the search page)-->
-            <li class="nav-item d-md-none">
-              <a class="nav-link" href="../pages/search-results.html" aria-label="Search">
-                <i class="bi bi-search" aria-hidden="true"></i>
-              </a>
-            </li>
-            <!--end::Search-->
-            <!--begin::Messages Dropdown Menu-->
-            <li class="nav-item dropdown">
-              
-              <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end">
-                <a href="#" class="dropdown-item">
-                  <!--begin::Message-->
-                  <div class="d-flex">
-                    <div class="flex-shrink-0">
-                      <img
-                        src="../assets/img/user1-128x128.jpg"
-                        alt=""
-                        class="img-size-50 rounded-circle me-3"
-                      />
-                    </div>
-                    <div class="flex-grow-1">
-                      <p class="dropdown-item-title">
-                        Brad Diesel
-                        <span class="float-end fs-7 text-danger"
-                          ><i class="bi bi-star-fill"></i
-                        ></span>
-                      </p>
-                      <p class="fs-7">Call me whenever you can...</p>
-                      <p class="fs-7 text-secondary">
-                        <i class="bi bi-clock-fill me-1"></i> 4 Hours Ago
-                      </p>
-                    </div>
-                  </div>
-                  <!--end::Message-->
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item">
-                  <!--begin::Message-->
-                  <div class="d-flex">
-                    <div class="flex-shrink-0">
-                      <img
-                        src="../assets/img/user8-128x128.jpg"
-                        alt=""
-                        class="img-size-50 rounded-circle me-3"
-                      />
-                    </div>
-                    <div class="flex-grow-1">
-                      <p class="dropdown-item-title">
-                        John Pierce
-                        <span class="float-end fs-7 text-secondary">
-                          <i class="bi bi-star-fill"></i>
-                        </span>
-                      </p>
-                      <p class="fs-7">I got your message bro</p>
-                      <p class="fs-7 text-secondary">
-                        <i class="bi bi-clock-fill me-1"></i> 4 Hours Ago
-                      </p>
-                    </div>
-                  </div>
-                  <!--end::Message-->
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item">
-                  <!--begin::Message-->
-                  <div class="d-flex">
-                    <div class="flex-shrink-0">
-                      <img
-                        src="../assets/img/user3-128x128.jpg"
-                        alt=""
-                        class="img-size-50 rounded-circle me-3"
-                      />
-                    </div>
-                    <div class="flex-grow-1">
-                      <p class="dropdown-item-title">
-                        Nora Silvester
-                        <span class="float-end fs-7 text-warning">
-                          <i class="bi bi-star-fill"></i>
-                        </span>
-                      </p>
-                      <p class="fs-7">The subject goes here</p>
-                      <p class="fs-7 text-secondary">
-                        <i class="bi bi-clock-fill me-1"></i> 4 Hours Ago
-                      </p>
-                    </div>
-                  </div>
-                  <!--end::Message-->
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item dropdown-footer">See All Messages</a>
-              </div>
-            </li>
-            <!--end::Messages Dropdown Menu-->
-
-            <!--begin::Notifications Dropdown Menu-->
-            <li class="nav-item dropdown">
-              <a
-                class="nav-link"
-                data-bs-toggle="dropdown"
-                href="#"
-                aria-label="Notifications: 15 unread"
-              >
-                <i class="bi bi-bell-fill"></i>
-                <span class="navbar-badge badge text-bg-warning">15</span>
-              </a>
-              <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end">
-                <span class="dropdown-item dropdown-header">15 Notifications</span>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item">
-                  <i class="bi bi-envelope me-2"></i> 4 new messages
-                  <span class="float-end text-secondary fs-7">3 mins</span>
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item">
-                  <i class="bi bi-people-fill me-2"></i> 8 friend requests
-                  <span class="float-end text-secondary fs-7">12 hours</span>
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item">
-                  <i class="bi bi-file-earmark-fill me-2"></i> 3 new reports
-                  <span class="float-end text-secondary fs-7">2 days</span>
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="#" class="dropdown-item dropdown-footer"> See All Notifications </a>
-              </div>
-            </li>
-            <!--end::Notifications Dropdown Menu-->
-
-            <!--begin::Language Menu-->
-            <!-- Markup only: swapping the locale is the application's job. The docs
-           Recipes page shows how to wire this to a real locale switch. -->
-            <li class="nav-item dropdown">
-              <a
-                class="nav-link"
-                href="#"
-                id="language-menu"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-                aria-label="Change language, current language English"
-              >
-                <i class="bi bi-translate" aria-hidden="true"></i>
-              </a>
-              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="language-menu">
-                <li>
-                  <a class="dropdown-item active" href="#" hreflang="en" aria-current="true">
-                    English
-                    <i class="bi bi-check-lg ms-2" aria-hidden="true"></i>
-                  </a>
-                </li>
-                <li><a class="dropdown-item" href="#" hreflang="es">Español</a></li>
-                <li><a class="dropdown-item" href="#" hreflang="fr">Français</a></li>
-                <li><a class="dropdown-item" href="#" hreflang="de">Deutsch</a></li>
-                <li><a class="dropdown-item" href="#" hreflang="ar">العربية</a></li>
-              </ul>
-            </li>
-            <!--end::Language Menu-->
-
-            <!--begin::Fullscreen Toggle-->
-            <li class="nav-item">
-              <a
-                class="nav-link"
-                href="#"
-                data-lte-toggle="fullscreen"
-                aria-label="Toggle fullscreen"
-              >
-                <i data-lte-icon="maximize" class="bi bi-arrows-fullscreen"></i>
-                <i data-lte-icon="minimize" class="bi bi-fullscreen-exit d-none"></i>
-              </a>
-            </li>
-            <!--end::Fullscreen Toggle-->
-
-            <!--begin::Color Mode Toggle (#6010)-->
-            <li class="nav-item dropdown">
-              <a
-                class="nav-link"
-                href="#"
-                id="bd-theme"
-                aria-label="Toggle color scheme"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i class="bi bi-sun-fill" data-lte-theme-icon="light"></i>
-                <i class="bi bi-moon-fill d-none" data-lte-theme-icon="dark"></i>
-                <i class="bi bi-circle-half d-none" data-lte-theme-icon="auto"></i>
-              </a>
-              <ul
-                class="dropdown-menu dropdown-menu-end"
-                aria-labelledby="bd-theme"
-                style="--bs-dropdown-min-width: 8rem"
-              >
-                <li>
-                  <button
-                    type="button"
-                    class="dropdown-item d-flex align-items-center"
-                    data-bs-theme-value="light"
-                    aria-pressed="false"
-                  >
-                    <i class="bi bi-sun-fill me-2"></i>
-                    Light
-                    <i class="bi bi-check-lg ms-auto d-none"></i>
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    class="dropdown-item d-flex align-items-center"
-                    data-bs-theme-value="dark"
-                    aria-pressed="false"
-                  >
-                    <i class="bi bi-moon-fill me-2"></i>
-                    Dark
-                    <i class="bi bi-check-lg ms-auto d-none"></i>
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    class="dropdown-item d-flex align-items-center active"
-                    data-bs-theme-value="auto"
-                    aria-pressed="true"
-                  >
-                    <i class="bi bi-circle-half me-2"></i>
-                    Auto
-                    <i class="bi bi-check-lg ms-auto d-none"></i>
-                  </button>
-                </li>
-              </ul>
-            </li>
-            <!--end::Color Mode Toggle-->
-
-            <!--begin::User Menu Dropdown-->
             <li class="nav-item dropdown user-menu">
               <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown">
-                <img
-                  src="../assets/img/user2-160x160.jpg"
-                  class="user-image rounded-circle shadow"
-                  alt="Alexander Pierce"
-                />
-                <span class="d-none d-md-inline">Alexander Pierce</span>
+                <span class="d-none d-md-inline"><?= htmlspecialchars($current_username) ?> (Admin)</span>
               </a>
               <ul class="dropdown-menu dropdown-menu-lg dropdown-menu-end">
-                <!--begin::User Image-->
-                <li class="user-header text-bg-primary">
-                  <img
-                    src="../assets/img/user2-160x160.jpg"
-                    class="rounded-circle shadow"
-                    alt="Alexander Pierce"
-                  />
-                  <p>
-                    Alexander Pierce - Web Developer
-                    <small>Member since Nov. 2023</small>
-                  </p>
-                </li>
-                <!--end::User Image-->
-                <!--begin::Menu Body-->
-                <li class="user-body">
-                  <!--begin::Row-->
-                  <div class="row">
-                    <div class="col-4 text-center">
-                      <a href="#">Followers</a>
-                    </div>
-                    <div class="col-4 text-center">
-                      <a href="#">Sales</a>
-                    </div>
-                    <div class="col-4 text-center">
-                      <a href="#">Friends</a>
-                    </div>
-                  </div>
-                  <!--end::Row-->
-                </li>
-                <!--end::Menu Body-->
-                <!--begin::Menu Footer-->
                 <li class="user-footer">
-                  <a href="#" class="btn btn-outline-secondary">Profile</a>
-                  <a href="#" class="btn btn-outline-danger float-end">Sign out</a>
+                  <a href="logout.php" class="btn btn-outline-danger float-end">Sign out</a>
                 </li>
-                <!--end::Menu Footer-->
               </ul>
             </li>
-            <!--end::User Menu Dropdown-->
           </ul>
-          <!--end::End Navbar Links-->
         </div>
-        <!--end::Container-->
       </nav>
       <!--end::Header-->
+      
       <!--begin::Sidebar-->
-      <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
-        <!--begin::Sidebar Brand-->
-        <div class="sidebar-brand">
-          <!--begin::Brand Link-->
-          <a href="../index.html" class="brand-link">
-            <!--begin::Brand Image-->
-            <img
-              src="../assets/img/AdminLTELogo.png"
-              alt="AdminLTE Logo"
-              class="brand-image opacity-75 shadow"
-            />
-            <!--end::Brand Image-->
-            <!--begin::Brand Text-->
-            <span class="brand-text fw-light">AdminLTE 4</span>
-            <!--end::Brand Text-->
-          </a>
-          <!--end::Brand Link-->
-        </div>
-        <!--end::Sidebar Brand-->
-        <!--begin::Sidebar Search-->
-        
-        <!--end::Sidebar Search-->
-        <!--begin::Sidebar Wrapper-->
-        <?php include 'include/aside_admin.php'; ?>
-        <!--end::Sidebar Wrapper-->
-      </aside>
-      <!--end::Sidebar-->
+      <?php include 'include/aside_admin.php'; ?>
+      <!--end::Sidebar-->      
+      
+      <!--begin::App Main-->
       <main class="app-main">
         <div class="app-content-header">
           <div class="container-fluid">
-            <div class="row">
-              <div class="col-sm-6">
-                <h1 class="mb-0 fs-3">Projects</h1>
-              </div>
-              <div class="col-sm-6">
-                <nav aria-label="breadcrumb">
-                  <ol class="breadcrumb float-sm-end">
-                    <li class="breadcrumb-item"><a href="#">Home</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">Projects</li>
-                  </ol>
-                </nav>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="app-content">
-          <div class="container-fluid">
-            <!-- Summary cards -->
-            <div class="row g-3 mb-3">
-              <div class="col-md-3 col-6">
-                <div class="card h-100">
-                  <div class="card-body">
-                    <p class="text-secondary small mb-1">Active projects</p>
-                    <h3 class="mb-0 fw-bold">6</h3>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-3 col-6">
-                <div class="card h-100">
-                  <div class="card-body">
-                    <p class="text-secondary small mb-1">On track</p>
-                    <h3 class="mb-0 fw-bold text-success">3</h3>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-3 col-6">
-                <div class="card h-100">
-                  <div class="card-body">
-                    <p class="text-secondary small mb-1">At risk / delayed</p>
-                    <h3 class="mb-0 fw-bold text-warning">2</h3>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-3 col-6">
-                <div class="card h-100">
-                  <div class="card-body">
-                    <p class="text-secondary small mb-1">Completed</p>
-                    <h3 class="mb-0 fw-bold text-secondary">1</h3>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            <!-- Toolbar -->
-            <div class="card">
-              <div class="card-header d-flex flex-wrap gap-2 align-items-center">
-                <h3 class="card-title mb-0 me-auto">All projects</h3>
-                <div class="input-group input-group-sm" style="width: 16rem">
-                  <span class="input-group-text">
-                    <i class="bi bi-search" aria-hidden="true"></i>
-                  </span>
-                  <input
-                    type="search"
-                    class="form-control"
-                    placeholder="Search projects&hellip;"
-                    aria-label="Search projects"
-                  />
-                </div>
-                <select
-                  class="form-select form-select-sm"
-                  style="width: 10rem"
-                  aria-label="Filter by status"
-                >
-                  <option value="">All statuses</option>
-                  <option>On track</option>
-                  <option>At risk</option>
-                  <option>Delayed</option>
-                  <option>Completed</option>
-                </select>
-                <button class="btn btn-primary btn-sm" type="button">
-                  <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                  New project
-                </button>
+            <!-- Alert Messages -->
+            <?php if ($msg_success): ?>
+              <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i><?= htmlspecialchars($msg_success) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
               </div>
-              <div class="card-body p-0">
-                <div class="table-responsive">
-                  <table class="table align-middle mb-0">
-                    <thead>
-                      <tr>
-                        <th>Project</th>
-                        <th>Status</th>
-                        <th>Progress</th>
-                        <th>Team</th>
-                        <th>Budget</th>
-                        <th>Due</th>
-                        <th>Priority</th>
-                        <th class="text-end">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <a href="#" class="fw-semibold text-decoration-none">
-                            AdminLTE 4 Release
-                          </a>
-                          <div class="small text-secondary">Internal</div>
-                        </td>
-                        <td>
-                          <span class="badge text-bg-success"> On track </span>
-                        </td>
-                        <td style="min-width: 8rem">
-                          <div class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 6px">
-                              <div
-                                class="progress-bar bg-primary"
-                                role="progressbar"
-                                style="width: 78%"
-                                aria-valuenow="78"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                              ></div>
-                            </div>
-                            <small class="text-secondary" style="min-width: 2.25rem"> 78% </small>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="d-inline-flex">
-                            <span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: 0;
-                              "
-                              title="JD"
-                            >
-                              JD </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-info-subtle text-info fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="OB"
-                            >
-                              OB </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-success-subtle text-success fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="DM"
-                            >
-                              DM
-                            </span>
-                          </div>
-                        </td>
-                        <td class="text-nowrap">$24,500</td>
-                        <td class="text-nowrap">Jun 14, 2026</td>
-                        <td>
-                          <span class="badge text-bg-danger"> High </span>
-                        </td>
-                        <td class="text-end">
-                          <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" title="View">
-                              <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="Edit">
-                              <i class="bi bi-pencil" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="More">
-                              <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <a href="#" class="fw-semibold text-decoration-none">
-                            Marketing Site Redesign
-                          </a>
-                          <div class="small text-secondary">Acme Corp</div>
-                        </td>
-                        <td>
-                          <span class="badge text-bg-warning"> At risk </span>
-                        </td>
-                        <td style="min-width: 8rem">
-                          <div class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 6px">
-                              <div
-                                class="progress-bar bg-info"
-                                role="progressbar"
-                                style="width: 42%"
-                                aria-valuenow="42"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                              ></div>
-                            </div>
-                            <small class="text-secondary" style="min-width: 2.25rem"> 42% </small>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="d-inline-flex">
-                            <span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-info-subtle text-info fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: 0;
-                              "
-                              title="OB"
-                            >
-                              OB </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-warning-subtle text-warning fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="MR"
-                            >
-                              MR
-                            </span>
-                          </div>
-                        </td>
-                        <td class="text-nowrap">$48,000</td>
-                        <td class="text-nowrap">Jul 02, 2026</td>
-                        <td>
-                          <span class="badge text-bg-danger"> High </span>
-                        </td>
-                        <td class="text-end">
-                          <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" title="View">
-                              <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="Edit">
-                              <i class="bi bi-pencil" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="More">
-                              <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <a href="#" class="fw-semibold text-decoration-none"> Mobile App v2 </a>
-                          <div class="small text-secondary">Nimbus Labs</div>
-                        </td>
-                        <td>
-                          <span class="badge text-bg-success"> On track </span>
-                        </td>
-                        <td style="min-width: 8rem">
-                          <div class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 6px">
-                              <div
-                                class="progress-bar bg-primary"
-                                role="progressbar"
-                                style="width: 61%"
-                                aria-valuenow="61"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                              ></div>
-                            </div>
-                            <small class="text-secondary" style="min-width: 2.25rem"> 61% </small>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="d-inline-flex">
-                            <span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: 0;
-                              "
-                              title="LC"
-                            >
-                              LC </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-danger-subtle text-danger fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="ED"
-                            >
-                              ED </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-secondary-subtle text-secondary fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="AF"
-                            >
-                              AF </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-info-subtle text-info fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="SK"
-                            >
-                              SK
-                            </span>
-                          </div>
-                        </td>
-                        <td class="text-nowrap">$92,500</td>
-                        <td class="text-nowrap">Aug 18, 2026</td>
-                        <td>
-                          <span class="badge text-bg-info"> Medium </span>
-                        </td>
-                        <td class="text-end">
-                          <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" title="View">
-                              <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="Edit">
-                              <i class="bi bi-pencil" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="More">
-                              <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <a href="#" class="fw-semibold text-decoration-none">
-                            Analytics Pipeline
-                          </a>
-                          <div class="small text-secondary">Internal</div>
-                        </td>
-                        <td>
-                          <span class="badge text-bg-danger"> Delayed </span>
-                        </td>
-                        <td style="min-width: 8rem">
-                          <div class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 6px">
-                              <div
-                                class="progress-bar bg-warning"
-                                role="progressbar"
-                                style="width: 22%"
-                                aria-valuenow="22"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                              ></div>
-                            </div>
-                            <small class="text-secondary" style="min-width: 2.25rem"> 22% </small>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="d-inline-flex">
-                            <span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-success-subtle text-success fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: 0;
-                              "
-                              title="DM"
-                            >
-                              DM
-                            </span>
-                          </div>
-                        </td>
-                        <td class="text-nowrap">$12,000</td>
-                        <td class="text-nowrap">May 30, 2026</td>
-                        <td>
-                          <span class="badge text-bg-info"> Medium </span>
-                        </td>
-                        <td class="text-end">
-                          <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" title="View">
-                              <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="Edit">
-                              <i class="bi bi-pencil" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="More">
-                              <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <a href="#" class="fw-semibold text-decoration-none">
-                            Brand Style Guide
-                          </a>
-                          <div class="small text-secondary">Riverhaus</div>
-                        </td>
-                        <td>
-                          <span class="badge text-bg-secondary"> Completed </span>
-                        </td>
-                        <td style="min-width: 8rem">
-                          <div class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 6px">
-                              <div
-                                class="progress-bar bg-success"
-                                role="progressbar"
-                                style="width: 100%"
-                                aria-valuenow="100"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                              ></div>
-                            </div>
-                            <small class="text-secondary" style="min-width: 2.25rem"> 100% </small>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="d-inline-flex">
-                            <span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-info-subtle text-info fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: 0;
-                              "
-                              title="OB"
-                            >
-                              OB </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-danger-subtle text-danger fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="ED"
-                            >
-                              ED
-                            </span>
-                          </div>
-                        </td>
-                        <td class="text-nowrap">$8,200</td>
-                        <td class="text-nowrap">May 09, 2026</td>
-                        <td>
-                          <span class="badge text-bg-secondary"> Low </span>
-                        </td>
-                        <td class="text-end">
-                          <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" title="View">
-                              <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="Edit">
-                              <i class="bi bi-pencil" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="More">
-                              <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <a href="#" class="fw-semibold text-decoration-none">
-                            Onboarding Email Flow
-                          </a>
-                          <div class="small text-secondary">Acme Corp</div>
-                        </td>
-                        <td>
-                          <span class="badge text-bg-success"> On track </span>
-                        </td>
-                        <td style="min-width: 8rem">
-                          <div class="d-flex align-items-center gap-2">
-                            <div class="progress flex-grow-1" style="height: 6px">
-                              <div
-                                class="progress-bar bg-info"
-                                role="progressbar"
-                                style="width: 55%"
-                                aria-valuenow="55"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                              ></div>
-                            </div>
-                            <small class="text-secondary" style="min-width: 2.25rem"> 55% </small>
-                          </div>
-                        </td>
-                        <td>
-                          <div class="d-inline-flex">
-                            <span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-warning-subtle text-warning fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: 0;
-                              "
-                              title="MR"
-                            >
-                              MR </span
-                            ><span
-                              class="rounded-circle d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary fw-semibold"
-                              style="
-                                width: 1.75rem;
-                                height: 1.75rem;
-                                font-size: 0.7rem;
-                                border: 2px solid var(--bs-body-bg);
-                                margin-left: -0.5rem;
-                              "
-                              title="JD"
-                            >
-                              JD
-                            </span>
-                          </div>
-                        </td>
-                        <td class="text-nowrap">$6,800</td>
-                        <td class="text-nowrap">Jun 22, 2026</td>
-                        <td>
-                          <span class="badge text-bg-secondary"> Low </span>
-                        </td>
-                        <td class="text-end">
-                          <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" title="View">
-                              <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="Edit">
-                              <i class="bi bi-pencil" aria-hidden="true"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" type="button" title="More">
-                              <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+            <?php endif; ?>
+            <?php if ($msg_error): ?>
+              <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i><?= htmlspecialchars($msg_error) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
               </div>
-              <div class="card-footer d-flex justify-content-between align-items-center">
-                <small class="text-secondary"> Showing 6 of 6 </small>
-                <nav aria-label="Pagination">
-                  <ul class="pagination pagination-sm mb-0">
-                    <li class="page-item disabled">
-                      <a class="page-link" href="#">Previous</a>
-                    </li>
-                    <li class="page-item active">
-                      <a class="page-link" href="#">1</a>
-                    </li>
-                    <li class="page-item disabled">
-                      <a class="page-link" href="#">Next</a>
-                    </li>
-                  </ul>
-                </nav>
+            <?php endif; ?>
+
+            <!--begin::Feed Header-->
+            <div class="feed-header mt-4">
+              <h5><i class="bi bi-rss me-2"></i>ระบบจัดการโพสต์ทั้งหมด (Admin)</h5>
+              <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createPostModal">
+                สร้างโพสต์ในฐานะแอดมิน
+              </button>
+            </div>
+            <!--end::Feed Header-->
+
+            <!--begin::Posts Feed-->
+            <div class="row">
+              <div class="col-lg-8 col-xl-7">
+
+                <?php if ($posts_result && mysqli_num_rows($posts_result) > 0): ?>
+                  <?php while ($post = mysqli_fetch_assoc($posts_result)): ?>
+                    <div class="card social-feed-card">
+                      <!--begin::Card Header-->
+                      <div class="card-header d-flex justify-content-between align-items-start">
+                        <div class="post-author-info">
+                          <div class="post-author-avatar">
+                            <?= strtoupper(mb_substr($post['seller_name'], 0, 1)) ?>
+                          </div>
+                          <div>
+                            <div class="post-author-name">
+                              <a href="#"><?= htmlspecialchars($post['seller_name']) ?></a>
+                            </div>
+                            <div class="post-meta-info">
+                              Post ID: #<?= $post['post_id'] ?> | Seller ID: <?= $post['seller_id'] ?>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                          <span class="post-status-badge <?= $post['status'] === 'availble' ? 'available' : 'sold' ?>">
+                            <i class="bi <?= $post['status'] === 'availble' ? 'bi-check-circle' : 'bi-x-circle' ?>"></i>
+                            <?= $post['status'] === 'availble' ? 'พร้อมขาย' : 'ขายแล้ว' ?>
+                          </span>
+                          <!-- Admin มีสิทธิ์แก้ไข/ลบทุกโพสต์ -->
+                          <div class="post-owner-actions">
+                            <button type="button" class="btn btn-sm btn-outline-warning btn-edit-post"
+                              data-bs-toggle="modal" 
+                              data-bs-target="#editPostModal"
+                              data-post-id="<?= $post['post_id'] ?>"
+                              data-game-id="<?= $post['game_id'] ?>"
+                              data-post-title="<?= htmlspecialchars($post['post_title'], ENT_QUOTES) ?>"
+                              data-post-detail="<?= htmlspecialchars($post['post_detail'], ENT_QUOTES) ?>"
+                              data-post-price="<?= $post['post_price'] ?>"
+                              data-post-img="<?= htmlspecialchars($post['post_img'], ENT_QUOTES) ?>"
+                              data-post-status="<?= $post['status'] ?>"
+                              title="จัดการแก้ไข"
+                            >
+                              <i class="bi bi-pencil"></i>
+                            </button>
+                            <form method="POST" action="dashboard.php" class="d-inline" onsubmit="return confirm('ในฐานะแอดมิน: คุณแน่ใจหรือไม่ที่จะลบโพสต์นี้แบบถาวร?');">
+                              <input type="hidden" name="action" value="delete_post">
+                              <input type="hidden" name="delete_post_id" value="<?= $post['post_id'] ?>">
+                              <button type="submit" class="btn btn-sm btn-outline-danger" title="ลบโพสต์">
+                                <i class="bi bi-trash"></i>
+                              </button>
+                            </form>
+                          </div>
+                        </div>
+                      </div>
+                      <!--end::Card Header-->
+
+                      <!--begin::Card Body-->
+                      <div class="card-body">
+                        <?php if (!empty($post['post_img'])): ?>
+                          <div class="post-image-container">
+                            <img src="<?= htmlspecialchars($post['post_img']) ?>" alt="<?= htmlspecialchars($post['post_title']) ?>" class="img-fluid" />
+                          </div>
+                        <?php endif; ?>
+
+                        <div class="post-game-badge">
+                          <i class="bi bi-controller"></i> <?= htmlspecialchars($post['game_name']) ?>
+                        </div>
+
+                        <div class="post-title"><?= htmlspecialchars($post['post_title']) ?></div>
+
+                        <?php if (!empty($post['post_detail'])): ?>
+                          <p class="post-detail"><?= nl2br(htmlspecialchars($post['post_detail'])) ?></p>
+                        <?php endif; ?>
+
+                        <div class="post-price-tag">
+                          <i class="bi bi-tag-fill"></i> ฿<?= number_format($post['post_price'], 2) ?>
+                        </div>
+                      </div>
+                      <!--end::Card Body-->
+                    </div>
+                  <?php endwhile; ?>
+                <?php else: ?>
+                  <div class="card social-feed-card">
+                    <div class="card-body empty-feed">
+                      <i class="bi bi-inbox"></i>
+                      <h5>ยังไม่มีโพสต์ในระบบ</h5>
+                    </div>
+                  </div>
+                <?php endif; ?>
+
               </div>
             </div>
+            <!--end::Posts Feed-->
+
           </div>
         </div>
       </main>
+      <!--end::App Main-->
+
+      <!--begin::Create Post Modal-->
+      <div class="modal fade" id="createPostModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <form method="POST" action="dashboard.php" enctype="multipart/form-data">
+              <input type="hidden" name="action" value="create_post">
+              <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>แอดมินสร้างโพสต์</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label">เกม <span class="text-danger">*</span></label>
+                    <select class="form-select" name="game_id" required>
+                      <option value="">-- เลือกเกม --</option>
+                      <?php foreach ($games_list as $game): ?>
+                        <option value="<?= $game['game_id'] ?>"><?= htmlspecialchars($game['game_name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">ราคา (บาท) <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0" class="form-control" name="post_price" placeholder="เช่น 500.00" required>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">หัวข้อโพสต์ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="post_title" placeholder="เช่น ขายไอดี Genshin Impact AR 60" required>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">รายละเอียดเพิ่มเติม</label>
+                    <textarea class="form-control" name="post_detail" rows="4" placeholder="อธิบายรายละเอียดไอดีเกมที่จะขาย..."></textarea>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">รูปภาพ</label>
+                    <input type="file" class="form-control" id="create_post_img" name="post_img" accept="image/jpeg,image/png,image/gif,image/webp">
+                    <div class="form-text">รองรับไฟล์ JPG, PNG, GIF, WebP ขนาดไม่เกิน 5MB</div>
+                    <div id="createImgPreview" class="mt-2" style="display:none;">
+                      <img id="createImgPreviewImg" src="" alt="Preview" style="max-height:180px;border-radius:8px;" class="img-fluid">
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                  <i class="bi bi-x-lg me-1"></i>ยกเลิก
+                </button>
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-check-lg me-1"></i>ลงประกาศ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <!--end::Create Post Modal-->
+
+      <!--begin::Edit Post Modal-->
+      <div class="modal fade" id="editPostModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <form method="POST" action="dashboard.php" enctype="multipart/form-data">
+              <input type="hidden" name="action" value="edit_post">
+              <input type="hidden" name="edit_post_id" id="edit_post_id">
+              <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>แอดมินแก้ไขโพสต์</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label">เกม <span class="text-danger">*</span></label>
+                    <select class="form-select" id="edit_game_id" name="edit_game_id" required>
+                      <option value="">-- เลือกเกม --</option>
+                      <?php foreach ($games_list as $game): ?>
+                        <option value="<?= $game['game_id'] ?>"><?= htmlspecialchars($game['game_name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">ราคา (บาท) <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0" class="form-control" id="edit_post_price" name="edit_post_price" required>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">หัวข้อโพสต์ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="edit_post_title" name="edit_post_title" required>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">รายละเอียดเพิ่มเติม</label>
+                    <textarea class="form-control" id="edit_post_detail" name="edit_post_detail" rows="4"></textarea>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">เปลี่ยนรูปภาพ</label>
+                    <input type="file" class="form-control" id="edit_post_img" name="edit_post_img" accept="image/jpeg,image/png,image/gif,image/webp">
+                    <div class="form-text">เลือกไฟล์ใหม่เพื่อเปลี่ยนรูป (ถ้าไม่เลือกจะคงรูปเดิม)</div>
+                    <div id="editImgPreview" class="mt-2" style="display:none;">
+                      <small class="text-secondary d-block mb-1">รูปภาพปัจจุบัน:</small>
+                      <img id="editImgPreviewImg" src="" alt="Current image" style="max-height:120px;border-radius:8px;" class="img-fluid">
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">สถานะ</label>
+                    <select class="form-select" id="edit_status" name="edit_status">
+                      <option value="availble">พร้อมขาย</option>
+                      <option value="sold">ขายแล้ว</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                  <i class="bi bi-x-lg me-1"></i>ยกเลิก
+                </button>
+                <button type="submit" class="btn btn-warning">
+                  <i class="bi bi-check-lg me-1"></i>บันทึกการแก้ไข
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <!--end::Edit Post Modal-->
+      
       <!--begin::Footer-->
       <footer class="app-footer">
-        <!--begin::To the end-->
         <div class="float-end d-none d-sm-inline">Anything you want</div>
-        <!--end::To the end-->
-        <!--begin::Copyright-->
         <strong>
           Copyright &copy; 2014-2026&nbsp;
           <a href="https://adminlte.io" class="text-decoration-none">AdminLTE.io</a>.
         </strong>
         All rights reserved.
-        <!--end::Copyright-->
       </footer>
       <!--end::Footer-->
     </div>
-    <!--begin::Third Party Plugin(OverlayScrollbars)-->
-    <script
-      src="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/browser/overlayscrollbars.browser.es6.min.js"
-      crossorigin="anonymous"
-    ></script>
-    <!--end::Third Party Plugin(OverlayScrollbars)--><!--begin::Required Plugin(popperjs for Bootstrap 5)-->
-    <script
-      src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"
-      crossorigin="anonymous"
-    ></script>
-    <!--end::Required Plugin(popperjs for Bootstrap 5)--><!--begin::Required Plugin(Bootstrap 5)-->
-    <script
-      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js"
-      crossorigin="anonymous"
-    ></script>
-    <!--end::Required Plugin(Bootstrap 5)--><!--begin::Required Plugin(AdminLTE)-->
+    <!--end::App Wrapper-->
+
+    <!--begin::Script-->
+    <script src="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/browser/overlayscrollbars.browser.es6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/4.0.0/js/adminlte.min.js"></script>
-    <!--end::Required Plugin(AdminLTE)-->
-    <!--begin::OverlayScrollbars Configure-->
+    
     <script>
       const SELECTOR_SIDEBAR_WRAPPER = '.sidebar-wrapper';
       const Default = {
@@ -1109,17 +665,11 @@ if ($role !== 'admin') {
         scrollbarAutoHide: 'leave',
         scrollbarClickScroll: true,
       };
+      
       document.addEventListener('DOMContentLoaded', function () {
         const sidebarWrapper = document.querySelector(SELECTOR_SIDEBAR_WRAPPER);
-
-        // Disable OverlayScrollbars on mobile devices to prevent touch interference
         const isMobile = window.innerWidth <= 992;
-
-        if (
-          sidebarWrapper &&
-          OverlayScrollbarsGlobal?.OverlayScrollbars !== undefined &&
-          !isMobile
-        ) {
+        if (sidebarWrapper && OverlayScrollbarsGlobal?.OverlayScrollbars !== undefined && !isMobile) {
           OverlayScrollbarsGlobal.OverlayScrollbars(sidebarWrapper, {
             scrollbars: {
               theme: Default.scrollbarTheme,
@@ -1128,46 +678,72 @@ if ($role !== 'admin') {
             },
           });
         }
+
+        // Edit Modal Data Binding
+        const editPostModal = document.getElementById('editPostModal');
+        if (editPostModal) {
+          editPostModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            document.getElementById('edit_post_id').value = button.getAttribute('data-post-id') || '';
+            document.getElementById('edit_game_id').value = button.getAttribute('data-game-id') || '';
+            document.getElementById('edit_post_title').value = button.getAttribute('data-post-title') || '';
+            document.getElementById('edit_post_detail').value = button.getAttribute('data-post-detail') || '';
+            document.getElementById('edit_post_price').value = button.getAttribute('data-post-price') || '';
+            document.getElementById('edit_status').value = button.getAttribute('data-post-status') || 'availble';
+
+            const currentImg = button.getAttribute('data-post-img') || '';
+            const editPreview = document.getElementById('editImgPreview');
+            const editPreviewImg = document.getElementById('editImgPreviewImg');
+            if (currentImg) {
+              editPreviewImg.src = currentImg;
+              editPreview.style.display = 'block';
+            } else {
+              editPreview.style.display = 'none';
+            }
+            document.getElementById('edit_post_img').value = '';
+          });
+        }
+
+        // Image Preview Handler
+        function handleImagePreview(inputId, previewBoxId, previewImgId) {
+          const input = document.getElementById(inputId);
+          if (input) {
+            input.addEventListener('change', function () {
+              const preview = document.getElementById(previewBoxId);
+              const img = document.getElementById(previewImgId);
+              if (this.files && this.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                  img.src = e.target.result;
+                  preview.style.display = 'block';
+                }
+                reader.readAsDataURL(this.files[0]);
+              } else {
+                preview.style.display = 'none';
+              }
+            });
+          }
+        }
+        handleImagePreview('create_post_img', 'createImgPreview', 'createImgPreviewImg');
+        handleImagePreview('edit_post_img', 'editImgPreview', 'editImgPreviewImg');
+
+        // Dismiss alerts automatically
+        const alerts = document.querySelectorAll('.alert-dismissible');
+        alerts.forEach(function (alert) {
+          setTimeout(function () { bootstrap.Alert.getOrCreateInstance(alert).close(); }, 5000);
+        });
+        
+        // Reset form on modal close
+        const createPostModal = document.getElementById('createPostModal');
+        if (createPostModal) {
+          createPostModal.addEventListener('hidden.bs.modal', function () {
+            this.querySelector('form').reset();
+            document.getElementById('createImgPreview').style.display = 'none';
+            document.getElementById('createImgPreviewImg').src = '';
+          });
+        }
       });
     </script>
-    <!--end::OverlayScrollbars Configure-->
-    <!--begin::Charts follow the colour mode-->
-    <script>
-      // ApexCharts draws light-theme tooltips and axis text unless told otherwise,
-      // which is unreadable in dark mode (#6105). Give it the page's colour mode as
-      // a global default before any chart is created — this runs before the chart
-      // pages' own scripts — and keep every chart that has a `chart.id` in step
-      // when the mode changes (ColorMode, the OS in auto mode, or your own code).
-      (() => {
-        'use strict';
-        const mode = () =>
-          document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
-        // `Apex` is ApexCharts' global-options object; it must exist before the library loads.
-        // theme.mode also sets a dark chart background — keep the card's instead.
-        // eslint-disable-next-line unicorn/no-global-object-property-assignment
-        globalThis.Apex ||= {};
-        const apex = globalThis.Apex;
-        apex.theme = { mode: mode() };
-        apex.chart = Object.assign(apex.chart || {}, { background: 'transparent' });
-        new MutationObserver(() => {
-          const next = mode();
-          apex.theme = { mode: next };
-          const instances = apex._chartInstances || [];
-          for (const { chart } of instances) {
-            chart.updateOptions({ theme: { mode: next } }, false, false);
-          }
-        }).observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ['data-bs-theme'],
-        });
-      })();
-    </script>
-    <!--end::Charts follow the colour mode-->
-
-    <!--begin::Color Mode Toggle-->
-    <!-- The light/dark/auto switcher ships in adminlte.js as the ColorMode
-     module (since 4.1) — no page script needed. Only the no-flash snippet
-     in <head> stays inline, because it must run before first paint. -->
-    <!--end::Color Mode Toggle-->
+    <!--end::Script-->
   </body>
 </html>

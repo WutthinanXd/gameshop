@@ -4,14 +4,10 @@
           <!--begin::Brand Link-->
           <a href="./index.html" class="brand-link">
             <!--begin::Brand Image-->
-            <img
-              src="./dist/assets/img/AdminLTELogo.png"
-              alt="AdminLTE Logo"
-              class="brand-image opacity-75 shadow"
-            />
+            
             <!--end::Brand Image-->
             <!--begin::Brand Text-->
-            <span class="brand-text fw-light">DRRS</span>
+            <span class="brand-text fw-light">Admin Dashboard</span>
             <!--end::Brand Text-->
           </a>
           <!--end::Brand Link-->
@@ -38,23 +34,30 @@
                 </a>
                 <ul class="nav nav-treeview">
                   <li class="nav-item">
-                    <a href="./index.html" class="nav-link active">
+                    <a href="dashboard.php" class="nav-link active">
                       <i class="nav-icon bi bi-circle"></i>
-                      <p>Dashboard v1</p>
+                      <p>จัดการโพสต์</p>
                     </a>
                   </li>
                   <li class="nav-item">
-                    <a href="./index2.html" class="nav-link">
+                    <a href="chat_admin.php" class="nav-link">
                       <i class="nav-icon bi bi-circle"></i>
-                      <p>Dashboard v2</p>
+                      <p>แชท</p>
                     </a>
                   </li>
                   <li class="nav-item">
-                    <a href="./index3.html" class="nav-link">
+                    <a href="users.php" class="nav-link">
                       <i class="nav-icon bi bi-circle"></i>
-                      <p>Dashboard v3</p>
+                      <p>จัดการผู้ใช้</p>
                     </a>
                   </li>
+                  <li class="nav-item">
+                    <a href="add_game_type.php" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>จัดการประเภทเกม</p>
+                    </a>
+                  </li>
+
                 </ul>
               </li>
               
