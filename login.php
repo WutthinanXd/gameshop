@@ -147,10 +147,8 @@ unset($_SESSION['login_error']);
             <!--begin::Row-->
             <div class="row">
               <div class="col-8">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="remember" value="1" id="flexCheckDefault" />
-                  <label class="form-check-label" for="flexCheckDefault"> Remember Me </label>
-                </div>
+                <!-- เปลี่ยนจาก button เป็น a และลบ type="submit" ออก -->
+                <a href="register.php" class="btn btn-outline-primary">Register</a>
               </div>
               <!-- /.col -->
               <div class="col-4">

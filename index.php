@@ -2,15 +2,15 @@
 require_once __DIR__ . '/config/auth.php';
 require_once __DIR__ . '/config/connectDB.php';
 
-// ตรวจสอบการเข้าสู่ระบบ
+
 start_app_session();
 require_login();
 
-// ดึงข้อมูลผู้ใช้ปัจจุบันจากเซสชัน
+
 $current_user_id = $_SESSION['user_id'] ?? 0;
 $current_username = $_SESSION['username'] ?? 'User';
 
-// ดึงบทบาท (Role) ของผู้ใช้ปัจจุบัน
+
 $role = 'user';
 $user_stmt = mysqli_prepare($conn, "SELECT role FROM tb_users WHERE user_id = ? LIMIT 1");
 mysqli_stmt_bind_param($user_stmt, "i", $current_user_id);
@@ -20,20 +20,43 @@ if ($u = mysqli_fetch_assoc($user_res)) {
     $role = $u['role'];
 }
 
-// จัดการการส่งฟอร์ม
+
 $msg_success = '';
 $msg_error = '';
 
-// สร้างโพสต์ใหม่
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_post') {
     if ($role === 'merchant' || $role === 'admin') {
         $game_id    = (int)($_POST['game_id'] ?? 0);
         $post_title = trim($_POST['post_title'] ?? '');
         $post_price = (float)($_POST['post_price'] ?? 0);
         $post_detail= trim($_POST['post_detail'] ?? '');
-        $post_img   = trim($_POST['post_img'] ?? '');
+        $post_img   = '';
 
-        if ($game_id > 0 && $post_title !== '' && $post_price > 0) {
+        
+        if (isset($_FILES['post_img']) && $_FILES['post_img']['error'] === UPLOAD_ERR_OK) {
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $file_type = $_FILES['post_img']['type'];
+            $file_size = $_FILES['post_img']['size'];
+            $max_size  = 5 * 1024 * 1024; // 5MB
+
+            if (in_array($file_type, $allowed_types) && $file_size <= $max_size) {
+                $ext = pathinfo($_FILES['post_img']['name'], PATHINFO_EXTENSION);
+                $new_filename = 'post_' . time() . '_' . uniqid() . '.' . $ext;
+                $upload_dir  = __DIR__ . '/upload/';
+                $upload_path = $upload_dir . $new_filename;
+
+                if (move_uploaded_file($_FILES['post_img']['tmp_name'], $upload_path)) {
+                    $post_img = 'upload/' . $new_filename;
+                } else {
+                    $msg_error = "เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ";
+                }
+            } else {
+                $msg_error = "รูปภาพต้องเป็นไฟล์ JPG, PNG, GIF หรือ WebP ขนาดไม่เกิน 5MB";
+            }
+        }
+
+        if ($msg_error === '' && $game_id > 0 && $post_title !== '' && $post_price > 0) {
             $insert_stmt = mysqli_prepare($conn, "INSERT INTO tb_posts (seller_id, game_id, post_title, post_detail, post_price, post_img, status) VALUES (?, ?, ?, ?, ?, ?, 'availble')");
             mysqli_stmt_bind_param($insert_stmt, "iissds", $current_user_id, $game_id, $post_title, $post_detail, $post_price, $post_img);
             
@@ -42,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             } else {
                 $msg_error = "เกิดข้อผิดพลาดในการลงประกาศ";
             }
-        } else {
+        } else if ($msg_error === '') {
             $msg_error = "กรุณากรอกข้อมูลสำคัญให้ครบถ้วน";
         }
     } else {
@@ -50,12 +73,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// แก้ไขโพสต์
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_post') {
     $edit_post_id = (int)($_POST['edit_post_id'] ?? 0);
     
-    // ตรวจสอบว่าเป็นเจ้าของโพสต์หรือ admin
-    $check_stmt = mysqli_prepare($conn, "SELECT seller_id FROM tb_posts WHERE post_id = ? LIMIT 1");
+    
+    $check_stmt = mysqli_prepare($conn, "SELECT seller_id, post_img FROM tb_posts WHERE post_id = ? LIMIT 1");
     mysqli_stmt_bind_param($check_stmt, "i", $edit_post_id);
     mysqli_stmt_execute($check_stmt);
     $check_res = mysqli_stmt_get_result($check_stmt);
@@ -66,10 +89,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $edit_post_title = trim($_POST['edit_post_title'] ?? '');
         $edit_post_price = (float)($_POST['edit_post_price'] ?? 0);
         $edit_post_detail= trim($_POST['edit_post_detail'] ?? '');
-        $edit_post_img   = trim($_POST['edit_post_img'] ?? '');
+        $edit_post_img   = $post_owner['post_img']; // คงรูปเดิมไว้ก่อน
         $edit_status     = trim($_POST['edit_status'] ?? 'availble');
 
-        if ($edit_game_id > 0 && $edit_post_title !== '' && $edit_post_price > 0) {
+        
+        if (isset($_FILES['edit_post_img']) && $_FILES['edit_post_img']['error'] === UPLOAD_ERR_OK) {
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $file_type = $_FILES['edit_post_img']['type'];
+            $file_size = $_FILES['edit_post_img']['size'];
+            $max_size  = 5 * 1024 * 1024; // 5MB
+
+            if (in_array($file_type, $allowed_types) && $file_size <= $max_size) {
+                $ext = pathinfo($_FILES['edit_post_img']['name'], PATHINFO_EXTENSION);
+                $new_filename = 'post_' . time() . '_' . uniqid() . '.' . $ext;
+                $upload_dir  = __DIR__ . '/upload/';
+                $upload_path = $upload_dir . $new_filename;
+
+                if (move_uploaded_file($_FILES['edit_post_img']['tmp_name'], $upload_path)) {
+                    
+                    if (!empty($post_owner['post_img']) && file_exists(__DIR__ . '/' . $post_owner['post_img'])) {
+                        unlink(__DIR__ . '/' . $post_owner['post_img']);
+                    }
+                    $edit_post_img = 'upload/' . $new_filename;
+                } else {
+                    $msg_error = "เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ";
+                }
+            } else {
+                $msg_error = "รูปภาพต้องเป็นไฟล์ JPG, PNG, GIF หรือ WebP ขนาดไม่เกิน 5MB";
+            }
+        }
+
+        if ($msg_error === '' && $edit_game_id > 0 && $edit_post_title !== '' && $edit_post_price > 0) {
             $update_stmt = mysqli_prepare($conn, "UPDATE tb_posts SET game_id = ?, post_title = ?, post_detail = ?, post_price = ?, post_img = ?, status = ? WHERE post_id = ?");
             mysqli_stmt_bind_param($update_stmt, "issdssi", $edit_game_id, $edit_post_title, $edit_post_detail, $edit_post_price, $edit_post_img, $edit_status, $edit_post_id);
             
@@ -78,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             } else {
                 $msg_error = "เกิดข้อผิดพลาดในการแก้ไขโพสต์";
             }
-        } else {
+        } else if ($msg_error === '') {
             $msg_error = "กรุณากรอกข้อมูลสำคัญให้ครบถ้วน";
         }
     } else {
@@ -86,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// ลบโพสต์
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_post') {
     $del_post_id = (int)($_POST['delete_post_id'] ?? 0);
     
@@ -110,7 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// ดึงรายชื่อเกมทั้งหมดเพื่อนำไปใช้ใน Select Dropdown
+
 $games_list = [];
 $games_query = mysqli_query($conn, "SELECT game_id, game_name FROM tb_games ORDER BY game_name ASC");
 if ($games_query) {
@@ -119,13 +169,51 @@ if ($games_query) {
     }
 }
 
-// ดึงรายการโพสต์ขายไอดีเกมทั้งหมด พร้อมรายละเอียดผู้ขายและชื่อเกม
+
 $sql_posts = "SELECT p.*, g.game_name, u.username AS seller_name 
               FROM tb_posts p
               JOIN tb_games g ON p.game_id = g.game_id
               JOIN tb_users u ON p.seller_id = u.user_id
               ORDER BY p.post_id DESC";
 $posts_result = mysqli_query($conn, $sql_posts);
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'start_chat') {
+    $post_id = (int)($_POST['post_id'] ?? 0);
+    $seller_id = (int)($_POST['seller_id'] ?? 0);
+
+    
+    if ($seller_id === $current_user_id) {
+        $msg_error = "คุณไม่สามารถทักแชทซื้อสินค้าของตัวเองได้";
+    } else if ($post_id > 0 && $seller_id > 0) {
+        
+        $check_room_sql = "SELECT room_id FROM tb_chat_rooms 
+                           WHERE post_id = ? 
+                             AND ((user_id = ? AND receiver_id = ?) OR (user_id = ? AND receiver_id = ?)) 
+                           LIMIT 1";
+        $stmt_room = mysqli_prepare($conn, $check_room_sql);
+        mysqli_stmt_bind_param($stmt_room, "iiiii", $post_id, $current_user_id, $seller_id, $seller_id, $current_user_id);
+        mysqli_stmt_execute($stmt_room);
+        $res_room = mysqli_stmt_get_result($stmt_room);
+
+        if ($room = mysqli_fetch_assoc($res_room)) {
+            $room_id = $room['room_id'];
+        } else {
+            
+            $insert_room_sql = "INSERT INTO tb_chat_rooms (user_id, receiver_id, post_id, room_type, status) VALUES (?, ?, ?, 'trade', 'active')";
+            $stmt_insert = mysqli_prepare($conn, $insert_room_sql);
+            mysqli_stmt_bind_param($stmt_insert, "iii", $current_user_id, $seller_id, $post_id);
+            mysqli_stmt_execute($stmt_insert);
+            $room_id = mysqli_insert_id($conn);
+        }
+
+        
+        if ($room_id > 0) {
+            header("Location: chat1.php?room_id=" . $room_id);
+            exit;
+        }
+    }
+}
 ?>
 
 <!doctype html>
@@ -234,234 +322,141 @@ $posts_result = mysqli_query($conn, $sql_posts);
     <!--end::Required Plugin(AdminLTE)-->
 
     <style>
-      /* Social Feed Custom Styles */
-      .social-feed-card {
-        border: none;
-        border-radius: 12px;
-        overflow: hidden;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        margin-bottom: 1.5rem;
-      }
-      .social-feed-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-      }
-      .social-feed-card .card-header {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        padding: 1rem 1.25rem;
-      }
-      .social-feed-card .card-body {
-        padding: 1rem 1.25rem;
-      }
-      .social-feed-card .card-footer {
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-        padding: 1rem 1.25rem;
-      }
+  /* Social Feed Simple Styles */
+  .social-feed-card {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+  }
+  .social-feed-card .card-header,
+  .social-feed-card .card-body,
+  .social-feed-card .card-footer {
+    padding: 1rem;
+  }
 
-      .post-author-info {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .post-author-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        font-weight: 700;
-        font-size: 1.1rem;
-        flex-shrink: 0;
-      }
-      .post-author-name a {
-        color: #7cacf8;
-        text-decoration: none;
-        font-weight: 600;
-        font-size: 0.95rem;
-      }
-      .post-author-name a:hover {
-        text-decoration: underline;
-      }
-      .post-meta-info {
-        font-size: 0.8rem;
-        opacity: 0.6;
-      }
+  .post-author-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .post-author-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #6c757d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .post-author-name a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .post-meta-info {
+    font-size: 0.8rem;
+    color: #6c757d;
+  }
 
-      .post-game-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 12px;
-        border-radius: 20px;
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        color: #a78bfa;
-        font-size: 0.8rem;
-        font-weight: 500;
-        margin-bottom: 0.75rem;
-      }
+  .post-game-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: #e9ecef;
+    color: #495057;
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 0.75rem;
+  }
 
-      .post-title {
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-      }
-      .post-detail {
-        font-size: 0.9rem;
-        opacity: 0.85;
-        line-height: 1.6;
-        margin-bottom: 0.75rem;
-      }
+  .post-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .post-detail {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+  }
 
-      .post-price-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 16px;
-        border-radius: 20px;
-        background: linear-gradient(135deg, #10b981, #059669);
-        color: #fff;
-        font-weight: 700;
-        font-size: 1rem;
-        margin-bottom: 0.75rem;
-      }
+  .post-price-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    background-color: #198754;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.75rem;
+  }
 
-      .post-status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 600;
-      }
-      .post-status-badge.available {
-        background: rgba(16, 185, 129, 0.15);
-        color: #34d399;
-        border: 1px solid rgba(16, 185, 129, 0.3);
-      }
-      .post-status-badge.sold {
-        background: rgba(239, 68, 68, 0.15);
-        color: #f87171;
-        border: 1px solid rgba(239, 68, 68, 0.3);
-      }
+  .post-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .post-status-badge.available {
+    background-color: #d1e7dd;
+    color: #0f5132;
+  }
+  .post-status-badge.sold {
+    background-color: #f8d7da;
+    color: #842029;
+  }
 
-      .post-image-container {
-        border-radius: 8px;
-        overflow: hidden;
-        margin-bottom: 1rem;
-        max-height: 300px;
-      }
-      .post-image-container img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-      }
+  .post-image-container {
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+    max-height: 300px;
+  }
+  .post-image-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 
-      .post-actions {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .post-actions .btn {
-        border-radius: 20px;
-        padding: 4px 14px;
-        font-size: 0.82rem;
-        transition: all 0.2s ease;
-      }
+  .post-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
 
-      .btn-create-post {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border: none;
-        color: #fff;
-        padding: 10px 24px;
-        border-radius: 25px;
-        font-weight: 600;
-        font-size: 0.95rem;
-        transition: all 0.3s ease;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .btn-create-post:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        color: #fff;
-      }
+  .feed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+  .feed-header h5 {
+    margin: 0;
+    font-weight: 600;
+  }
 
-      .feed-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.5rem;
-      }
-      .feed-header h5 {
-        margin: 0;
-        font-weight: 700;
-        font-size: 1.4rem;
-      }
+  .empty-feed {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #6c757d;
+  }
+  .empty-feed i {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    display: block;
+  }
 
-      .modal-content {
-        border-radius: 16px;
-        border: none;
-      }
-      .modal-header {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 1.25rem 1.5rem;
-      }
-      .modal-body {
-        padding: 1.5rem;
-      }
-      .modal-footer {
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 1rem 1.5rem;
-      }
-
-      .modal .form-label {
-        font-weight: 600;
-        font-size: 0.88rem;
-        margin-bottom: 0.4rem;
-      }
-      .modal .form-control,
-      .modal .form-select {
-        border-radius: 10px;
-        padding: 0.6rem 1rem;
-      }
-
-      .empty-feed {
-        text-align: center;
-        padding: 3rem 2rem;
-        opacity: 0.6;
-      }
-      .empty-feed i {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-        display: block;
-      }
-
-      .post-owner-actions {
-        display: flex;
-        gap: 4px;
-      }
-      .post-owner-actions .btn {
-        padding: 2px 8px;
-        font-size: 0.78rem;
-        border-radius: 6px;
-      }
-
-      /* Alert animation */
-      .alert-dismissible {
-        animation: slideDown 0.3s ease;
-      }
-      @keyframes slideDown {
-        from { opacity: 0; transform: translateY(-10px); }
-        to   { opacity: 1; transform: translateY(0); }
-      }
-    </style>
+  .post-owner-actions {
+    display: flex;
+    gap: 4px;
+  }
+</style>
   </head>
   <!--end::Head-->
   <!--begin::Body-->
@@ -538,7 +533,15 @@ $posts_result = mysqli_query($conn, $sql_posts);
       </nav>
       <!--end::Header-->
       <!--begin::Sidebar-->
-      <?php include 'include/aside.php' ;?>      <!--end::Sidebar-->
+      <!--begin::Sidebar-->
+        <?php 
+          if (isset($role) && $role === 'admin') {
+              include 'include/aside_admin.php';
+          } else {
+              include 'include/aside.php';
+          }
+        ?>
+<!--end::Sidebar-->      
       <!--begin::App Main-->
       <main class="app-main">
         <!--begin::App Content Header-->
@@ -564,9 +567,14 @@ $posts_result = mysqli_query($conn, $sql_posts);
             <div class="feed-header mt-4">
               <h5><i class="bi bi-rss me-2"></i>Social feed</h5>
               <?php if ($role === 'merchant' || $role === 'admin'): ?>
-                <button type="button" class="btn btn-create-post" data-bs-toggle="modal" data-bs-target="#createPostModal">
-                  <i class="bi bi-plus-circle"></i> สร้างโพสต์ขาย
-                </button>
+                <button
+                            type="button"
+                            class="btn btn-sm btn-primary"
+                            data-bs-toggle="modal"
+                            data-bs-target="#createPostModal"
+                          >
+                            สร้างโพสต์ใหม่
+                          </button>
               <?php endif; ?>
             </div>
             <!--end::Feed Header-->
@@ -656,16 +664,19 @@ $posts_result = mysqli_query($conn, $sql_posts);
                       <!--begin::Card Footer-->
                       <div class="card-footer">
                         <div class="post-actions">
-                          <button type="button" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-share me-1" aria-hidden="true"></i> Share
-                          </button>
-                          <button type="button" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-hand-thumbs-up me-1" aria-hidden="true"></i> Like
-                          </button>
-                          <button type="button" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-cart-plus me-1" aria-hidden="true"></i> สนใจซื้อ
-                          </button>
-                        </div>
+  <?php if ($post['seller_id'] != $current_user_id): ?>
+    <form method="POST" action="index.php" class="d-inline">
+      <input type="hidden" name="action" value="start_chat">
+      <input type="hidden" name="post_id" value="<?= $post['post_id'] ?>">
+      <input type="hidden" name="seller_id" value="<?= $post['seller_id'] ?>">
+      <button type="submit" class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-chat-dots me-1" aria-hidden="true"></i> สนใจซื้อ / ทักแชท
+      </button>
+    </form>
+  <?php else: ?>
+    <span class="badge bg-secondary">โพสต์ของคุณเอง</span>
+  <?php endif; ?>
+</div>
                       </div>
                       <!--end::Card Footer-->
                     </div>
@@ -695,7 +706,7 @@ $posts_result = mysqli_query($conn, $sql_posts);
       <div class="modal fade" id="createPostModal" tabindex="-1" aria-labelledby="createPostModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
           <div class="modal-content">
-            <form method="POST" action="index.php">
+            <form method="POST" action="index.php" enctype="multipart/form-data">
               <input type="hidden" name="action" value="create_post">
               <div class="modal-header">
                 <h5 class="modal-title" id="createPostModalLabel">
@@ -727,9 +738,12 @@ $posts_result = mysqli_query($conn, $sql_posts);
                     <textarea class="form-control" id="create_post_detail" name="post_detail" rows="4" placeholder="อธิบายรายละเอียดไอดีเกมที่จะขาย..."></textarea>
                   </div>
                   <div class="col-12">
-                    <label for="create_post_img" class="form-label">URL รูปภาพ</label>
-                    <input type="url" class="form-control" id="create_post_img" name="post_img" placeholder="https://example.com/image.jpg">
-                    <div class="form-text">วาง URL รูปภาพเพื่อแสดงในโพสต์</div>
+                    <label for="create_post_img" class="form-label">รูปภาพ</label>
+                    <input type="file" class="form-control" id="create_post_img" name="post_img" accept="image/jpeg,image/png,image/gif,image/webp">
+                    <div class="form-text">รองรับไฟล์ JPG, PNG, GIF, WebP ขนาดไม่เกิน 5MB</div>
+                    <div id="createImgPreview" class="mt-2" style="display:none;">
+                      <img id="createImgPreviewImg" src="" alt="Preview" style="max-height:180px;border-radius:8px;" class="img-fluid">
+                    </div>
                   </div>
                 </div>
               </div>
@@ -751,7 +765,7 @@ $posts_result = mysqli_query($conn, $sql_posts);
       <div class="modal fade" id="editPostModal" tabindex="-1" aria-labelledby="editPostModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
           <div class="modal-content">
-            <form method="POST" action="index.php">
+            <form method="POST" action="index.php" enctype="multipart/form-data">
               <input type="hidden" name="action" value="edit_post">
               <input type="hidden" name="edit_post_id" id="edit_post_id">
               <div class="modal-header">
@@ -784,8 +798,13 @@ $posts_result = mysqli_query($conn, $sql_posts);
                     <textarea class="form-control" id="edit_post_detail" name="edit_post_detail" rows="4"></textarea>
                   </div>
                   <div class="col-md-6">
-                    <label for="edit_post_img" class="form-label">URL รูปภาพ</label>
-                    <input type="url" class="form-control" id="edit_post_img" name="edit_post_img">
+                    <label for="edit_post_img" class="form-label">เปลี่ยนรูปภาพ</label>
+                    <input type="file" class="form-control" id="edit_post_img" name="edit_post_img" accept="image/jpeg,image/png,image/gif,image/webp">
+                    <div class="form-text">เลือกไฟล์ใหม่เพื่อเปลี่ยนรูป (ถ้าไม่เลือกจะคงรูปเดิม)</div>
+                    <div id="editImgPreview" class="mt-2" style="display:none;">
+                      <small class="text-secondary d-block mb-1">รูปภาพปัจจุบัน:</small>
+                      <img id="editImgPreviewImg" src="" alt="Current image" style="max-height:120px;border-radius:8px;" class="img-fluid">
+                    </div>
                   </div>
                   <div class="col-md-6">
                     <label for="edit_status" class="form-label">สถานะ</label>
@@ -891,8 +910,72 @@ $posts_result = mysqli_query($conn, $sql_posts);
             document.getElementById('edit_post_title').value = button.getAttribute('data-post-title') || '';
             document.getElementById('edit_post_detail').value = button.getAttribute('data-post-detail') || '';
             document.getElementById('edit_post_price').value = button.getAttribute('data-post-price') || '';
-            document.getElementById('edit_post_img').value = button.getAttribute('data-post-img') || '';
             document.getElementById('edit_status').value = button.getAttribute('data-post-status') || 'availble';
+
+            // แสดง preview รูปภาพปัจจุบัน
+            const currentImg = button.getAttribute('data-post-img') || '';
+            const editPreview = document.getElementById('editImgPreview');
+            const editPreviewImg = document.getElementById('editImgPreviewImg');
+            if (currentImg) {
+              editPreviewImg.src = currentImg;
+              editPreview.style.display = 'block';
+            } else {
+              editPreviewImg.src = '';
+              editPreview.style.display = 'none';
+            }
+
+            // รีเซ็ต file input
+            document.getElementById('edit_post_img').value = '';
+          });
+        }
+
+        // Preview รูปภาพที่เลือกในฟอร์มสร้างโพสต์
+        const createImgInput = document.getElementById('create_post_img');
+        if (createImgInput) {
+          createImgInput.addEventListener('change', function () {
+            const preview = document.getElementById('createImgPreview');
+            const previewImg = document.getElementById('createImgPreviewImg');
+            if (this.files && this.files[0]) {
+              const reader = new FileReader();
+              reader.onload = function (e) {
+                previewImg.src = e.target.result;
+                preview.style.display = 'block';
+              };
+              reader.readAsDataURL(this.files[0]);
+            } else {
+              previewImg.src = '';
+              preview.style.display = 'none';
+            }
+          });
+        }
+
+        // Preview รูปภาพที่เลือกในฟอร์มแก้ไขโพสต์
+        const editImgInput = document.getElementById('edit_post_img');
+        if (editImgInput) {
+          editImgInput.addEventListener('change', function () {
+            const preview = document.getElementById('editImgPreview');
+            const previewImg = document.getElementById('editImgPreviewImg');
+            if (this.files && this.files[0]) {
+              const reader = new FileReader();
+              reader.onload = function (e) {
+                previewImg.src = e.target.result;
+                preview.style.display = 'block';
+              };
+              reader.readAsDataURL(this.files[0]);
+            } else {
+              previewImg.src = '';
+              preview.style.display = 'none';
+            }
+          });
+        }
+
+        // รีเซ็ตฟอร์มสร้างโพสต์เมื่อปิด modal
+        const createPostModal = document.getElementById('createPostModal');
+        if (createPostModal) {
+          createPostModal.addEventListener('hidden.bs.modal', function () {
+            this.querySelector('form').reset();
+            document.getElementById('createImgPreview').style.display = 'none';
+            document.getElementById('createImgPreviewImg').src = '';
           });
         }
 

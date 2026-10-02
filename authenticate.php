@@ -10,27 +10,33 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $username = trim($_POST['username'] ?? '');
-$password = $_POST['password'] ?? '';
+$password =$_POST['password'] ?? '';
 
-if ($username === '' || $password === '') {
-    $_SESSION['login_error'] = 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน';
+if ($username === '' || $password === '') {$_SESSION['login_error'] = 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน';
     header('Location: login.php');
     exit;
 }
 
-$stmt = mysqli_prepare($conn, 'SELECT user_id, username, password_hash FROM tb_users WHERE username = ? LIMIT 1');
-mysqli_stmt_bind_param($stmt, 's', $username);
+// เพิ่มการดึงข้อมูล `role` ออกมาจากฐานข้อมูล
+$stmt = mysqli_prepare($conn, 'SELECT user_id, username, password_hash, role FROM tb_users WHERE username = ? LIMIT 1');
+mysqli_stmt_bind_param($stmt, 's',$username);
 mysqli_stmt_execute($stmt);
 $user = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
 
-if (!$user || !password_verify($password, $user['password_hash'])) {
-    $_SESSION['login_error'] = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+if (!$user || !password_verify($password, $user['password_hash'])) {$_SESSION['login_error'] = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
     header('Location: login.php');
     exit;
 }
 
 session_regenerate_id(true);
-$_SESSION['user_id'] = (int) $user['user_id'];
-$_SESSION['username'] = $user['username'];
-header('Location: index.php');
+$_SESSION['user_id'] = (int)$user['user_id'];
+$_SESSION['username'] =$user['username'];
+$_SESSION['role'] =$user['role']; // แนะนำให้เก็บ session role ไว้ใช้งานเพิ่มเติม
+
+// เช็คสิทธิ์และแยกหน้า Redirect
+if ($user['role'] === 'admin') {
+    header('Location: dashboard.php');
+} else {
+    header('Location: index.php');
+}
 exit;
