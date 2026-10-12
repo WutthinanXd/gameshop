@@ -99,7 +99,7 @@ unset($_SESSION['login_error']);
   <body class="login-page bg-body-secondary">
     <main class="login-box">
       <h1 class="login-logo">
-        <a href="index.php"><b>Room</b>System</a>
+        <a href="index.php"><b>Game</b>Shop</a>
       </h1>
       <!-- /.login-logo -->
       <div class="card">

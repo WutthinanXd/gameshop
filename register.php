@@ -261,6 +261,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <!-- /.col -->
             </div>
             <!--end::Row-->
+            <div class="row mt-3">
+              <div class="col-12">
+                <div class="d-grid gap-2">
+                  <a href="login.php" class="btn btn-outline-secondary">มีบัญชีอยู่แล้ว? กลับไปหน้าเข้าสู่ระบบ</a>
+                </div>
+              </div>
+            </div>
           </form>
 
           

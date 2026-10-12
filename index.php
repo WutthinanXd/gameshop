@@ -592,6 +592,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                           <div class="post-author-avatar">
                             <?= strtoupper(mb_substr($post['seller_name'], 0, 1)) ?>
                           </div>
+                          <!-- Modal แสดงรายละเอียดโพสต์ -->
+                          <div class="modal fade" id="viewPostModal<?= $post['post_id'] ?>" tabindex="-1" aria-labelledby="viewPostLabel<?= $post['post_id'] ?>" aria-hidden="true">
+                            <div class="modal-dialog modal-lg modal-dialog-centered">
+                              <div class="modal-content">
+                                <div class="modal-header">
+                                  <h5 class="modal-title" id="viewPostLabel<?= $post['post_id'] ?>">
+                                    <i class="bi bi-info-circle me-2"></i><?= htmlspecialchars($post['post_title']) ?>
+                                  </h5>
+                                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                  <?php if (!empty($post['post_img'])): ?>
+                                    <div class="text-center mb-3">
+                                      <img src="<?= htmlspecialchars($post['post_img']) ?>" alt="Post Image" class="img-fluid rounded shadow-sm" style="max-height: 400px; width: 100%; object-fit: contain; background: #000;">
+                                    </div>
+        <?php endif; ?>
+
+        <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+          <span class="badge bg-primary fs-6"><i class="bi bi-controller me-1"></i><?= htmlspecialchars($post['game_name']) ?></span>
+          <span class="badge <?= $post['status'] === 'availble' ? 'bg-success' : 'bg-danger' ?> fs-6">
+            <?= $post['status'] === 'availble' ? 'พร้อมขาย' : 'ขายแล้ว' ?>
+          </span>
+          <span class="badge bg-warning text-dark fs-6">
+            ฿<?= number_format($post['post_price'], 2) ?>
+          </span>
+        </div>
+
+        <div class="mb-3">
+          <h6 class="fw-bold text-secondary">ผู้ลงประกาศ:</h6>
+          <p class="mb-1"><i class="bi bi-person-circle me-1"></i><?= htmlspecialchars($post['seller_name']) ?></p>
+        </div>
+
+        <div class="mb-3">
+          <h6 class="fw-bold text-secondary">รายละเอียดสินค้า:</h6>
+          <div class="p-3 bg-body-secondary rounded">
+            <?= nl2br(htmlspecialchars($post['post_detail'])) ?>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+        <?php if ($post['seller_id'] != $current_user_id): ?>
+          <form method="POST" action="index.php" class="d-inline">
+            <input type="hidden" name="action" value="start_chat">
+            <input type="hidden" name="post_id" value="<?= $post['post_id'] ?>">
+            <input type="hidden" name="seller_id" value="<?= $post['seller_id'] ?>">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-chat-dots me-1"></i> ทักแชทผู้ขาย
+            </button>
+          </form>
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+</div>
                           <div>
                             <div class="post-author-name">
                               <a href="#"><?= htmlspecialchars($post['seller_name']) ?></a>
@@ -664,6 +719,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                       <!--begin::Card Footer-->
                       <div class="card-footer">
                         <div class="post-actions">
+                          <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#viewPostModal<?= $post['post_id'] ?>">
+    <i class="bi bi-eye me-1"></i> ดูรายละเอียด
+  </button>
   <?php if ($post['seller_id'] != $current_user_id): ?>
     <form method="POST" action="index.php" class="d-inline">
       <input type="hidden" name="action" value="start_chat">
@@ -703,6 +761,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       <!--end::App Main-->
 
       <!--begin::Create Post Modal-->
+      
       <div class="modal fade" id="createPostModal" tabindex="-1" aria-labelledby="createPostModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
           <div class="modal-content">
