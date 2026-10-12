@@ -3,7 +3,7 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/connectDB.php';
 
-$result = mysqli_query($conn, 'SELECT user_id, username, created_at FROM tb_users ORDER BY user_id DESC');
+$result = mysqli_query($conn, 'SELECT user_id, username, role, created_at FROM tb_users ORDER BY user_id DESC');
 $status = $_GET['status'] ?? '';
 $messages = [
     'success' => ['success', 'เพิ่มผู้ใช้เรียบร้อยแล้ว'],
@@ -14,13 +14,19 @@ $messages = [
     'delete_success' => ['success', 'ลบผู้ใช้เรียบร้อยแล้ว'],
     'cannot_delete_self' => ['warning', 'ไม่สามารถลบบัญชีที่กำลังเข้าสู่ระบบอยู่ได้'],
 ];
+
+$roleLabels = [
+    'user'     => 'ผู้ใช้',
+    'merchant' => 'ผู้ขาย',
+    'admin'    => 'แอดมิน',
+];
 ?>
 <!doctype html>
 <html lang="en">
   <!--begin::Head-->
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>AdminLTE v4 | Dashboard</title>
+    <title>AdminLTE v4 | จัดการผู้ใช้</title>
 
     <!--begin::Theme Init (prevents flash of incorrect theme on load, #6043)-->
     <script>
@@ -71,7 +77,7 @@ $messages = [
     <!--end::Accessibility Meta Tags-->
 
     <!--begin::Primary Meta Tags-->
-    <meta name="title" content="AdminLTE v4 | Dashboard" />
+    <meta name="title" content="AdminLTE v4 | จัดการผู้ใช้" />
     <meta name="author" content="ColorlibHQ" />
     <meta
       name="description"
@@ -251,9 +257,17 @@ $messages = [
                                 <input id="password" name="password" type="password" class="form-control" minlength="6" required>
                                 <div class="form-text">อย่างน้อย 6 ตัวอักษร</div>
                             </div>
-                            <div class="mb-4">
+                            <div class="mb-3">
                                 <label for="confirm_password" class="form-label">ยืนยันรหัสผ่าน</label>
                                 <input id="confirm_password" name="confirm_password" type="password" class="form-control" minlength="6" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="role" class="form-label">บทบาท</label>
+                                <select id="role" name="role" class="form-select" required>
+                                    <option value="user">ผู้ใช้ (User)</option>
+                                    <option value="merchant">ผู้ขาย (Merchant)</option>
+                                    <option value="admin">แอดมิน (Admin)</option>
+                                </select>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">บันทึกผู้ใช้</button>
                         </form>
@@ -266,15 +280,29 @@ $messages = [
                         <h2 class="h5 mb-3">รายชื่อผู้ใช้</h2>
                         <div class="table-responsive">
                             <table class="table table-striped align-middle mb-0">
-                                <thead><tr><th>ลำดับ</th><th>ชื่อผู้ใช้</th><th>วันที่สร้าง</th><th>จัดการ</th></tr></thead>
+                                <thead><tr><th>ลำดับ</th><th>ชื่อผู้ใช้</th><th>บทบาท</th><th>วันที่สร้าง</th><th>จัดการ</th></tr></thead>
                                 <tbody>
                                 <?php while ($user = mysqli_fetch_assoc($result)): ?>
                                     <tr>
                                         <td><?= (int) $user['user_id'] ?></td>
                                         <td><?= htmlspecialchars($user['username'], ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td><?= htmlspecialchars($user['created_at'], ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td>
+                                            <?php
+                                                $roleBadge = match($user['role']) {
+                                                    'admin'    => 'bg-danger',
+                                                    'merchant' => 'bg-warning text-dark',
+                                                    default    => 'bg-info text-dark',
+                                                };
+                                            ?>
+                                            <span class="badge <?= $roleBadge ?>"><?= htmlspecialchars($roleLabels[$user['role']] ?? $user['role'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        </td>
+                                        <td><?= htmlspecialchars($user['created_at'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
                                         <td class="text-nowrap">
-                                            <a class="btn btn-sm btn-warning" href="edit_user.php?id=<?= (int) $user['user_id'] ?>">แก้ไข</a>
+                                            <button type="button" class="btn btn-sm btn-warning btn-edit-user"
+                                                data-user-id="<?= (int) $user['user_id'] ?>"
+                                                data-username="<?= htmlspecialchars($user['username'], ENT_QUOTES, 'UTF-8') ?>"
+                                                data-role="<?= htmlspecialchars($user['role'], ENT_QUOTES, 'UTF-8') ?>"
+                                            >แก้ไข</button>
                                             <?php if ((int) $user['user_id'] !== (int) $_SESSION['user_id']): ?>
                                                 <form action="delete_user.php" method="post" class="d-inline" onsubmit="return confirm('ยืนยันการลบผู้ใช้นี้?');">
                                                     <input type="hidden" name="user_id" value="<?= (int) $user['user_id'] ?>">
@@ -292,6 +320,52 @@ $messages = [
             </section>
         </div>
     </main>
+
+      <!--begin::Edit User Modal-->
+      <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <form action="update_user.php" method="post">
+              <div class="modal-header">
+                <h5 class="modal-title" id="editUserModalLabel"><i class="bi bi-pencil-square me-2"></i>แก้ไขข้อมูลผู้ใช้</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+              </div>
+              <div class="modal-body">
+                <input type="hidden" name="user_id" id="edit_user_id">
+                <div class="mb-3">
+                  <label for="edit_username" class="form-label">ชื่อผู้ใช้</label>
+                  <input id="edit_username" name="username" type="text" class="form-control" maxlength="100" required>
+                </div>
+                <div class="mb-3">
+                  <label for="edit_role" class="form-label">บทบาท</label>
+                  <select id="edit_role" name="role" class="form-select" required>
+                    <option value="user">ผู้ใช้ (User)</option>
+                    <option value="merchant">ผู้ขาย (Merchant)</option>
+                    <option value="admin">แอดมิน (Admin)</option>
+                  </select>
+                </div>
+                <hr>
+                <p class="text-secondary mb-2"><small>เว้นว่างหากไม่ต้องการเปลี่ยนรหัสผ่าน</small></p>
+                <div class="mb-3">
+                  <label for="edit_password" class="form-label">รหัสผ่านใหม่</label>
+                  <input id="edit_password" name="password" type="password" class="form-control" minlength="6">
+                  <div class="form-text">อย่างน้อย 6 ตัวอักษร</div>
+                </div>
+                <div class="mb-3">
+                  <label for="edit_confirm_password" class="form-label">ยืนยันรหัสผ่านใหม่</label>
+                  <input id="edit_confirm_password" name="confirm_password" type="password" class="form-control" minlength="6">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>บันทึกการแก้ไข</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <!--end::Edit User Modal-->
+
       <!--end::App Main-->
       <!--begin::Footer-->
       <footer class="app-footer">
@@ -358,237 +432,30 @@ $messages = [
       });
     </script>
     <!--end::OverlayScrollbars Configure-->
-    <!--begin::Charts follow the colour mode-->
+
+    <!--begin::Edit User Modal Script-->
     <script>
-      // ApexCharts draws light-theme tooltips and axis text unless told otherwise,
-      // which is unreadable in dark mode (#6105). Give it the page's colour mode as
-      // a global default before any chart is created — this runs before the chart
-      // pages' own scripts — and keep every chart that has a `chart.id` in step
-      // when the mode changes (ColorMode, the OS in auto mode, or your own code).
-      (() => {
-        'use strict';
-        const mode = () =>
-          document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
-        // `Apex` is ApexCharts' global-options object; it must exist before the library loads.
-        // theme.mode also sets a dark chart background — keep the card's instead.
-        // eslint-disable-next-line unicorn/no-global-object-property-assignment
-        globalThis.Apex ||= {};
-        const apex = globalThis.Apex;
-        apex.theme = { mode: mode() };
-        apex.chart = Object.assign(apex.chart || {}, { background: 'transparent' });
-        new MutationObserver(() => {
-          const next = mode();
-          apex.theme = { mode: next };
-          const instances = apex._chartInstances || [];
-          for (const { chart } of instances) {
-            chart.updateOptions({ theme: { mode: next } }, false, false);
-          }
-        }).observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ['data-bs-theme'],
+      document.addEventListener('DOMContentLoaded', function () {
+        const editModal = document.getElementById('editUserModal');
+        const editButtons = document.querySelectorAll('.btn-edit-user');
+
+        editButtons.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            document.getElementById('edit_user_id').value = this.dataset.userId;
+            document.getElementById('edit_username').value = this.dataset.username;
+            document.getElementById('edit_role').value = this.dataset.role;
+            // Clear password fields every time the modal opens
+            document.getElementById('edit_password').value = '';
+            document.getElementById('edit_confirm_password').value = '';
+
+            const modal = new bootstrap.Modal(editModal);
+            modal.show();
+          });
         });
-      })();
-    </script>
-    <!--end::Charts follow the colour mode-->
-
-    <!--begin::Color Mode Toggle-->
-    <!-- The light/dark/auto switcher ships in adminlte.js as the ColorMode
-     module (since 4.1) — no page script needed. Only the no-flash snippet
-     in <head> stays inline, because it must run before first paint. -->
-    <!--end::Color Mode Toggle-->
-
-    <!-- OPTIONAL SCRIPTS -->
-
-    <!-- sortablejs -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"
-      crossorigin="anonymous"
-    ></script>
-    <!-- sortablejs -->
-    <script>
-      new Sortable(document.querySelector('.connectedSortable'), {
-        group: 'shared',
-        handle: '.card-header',
-      });
-
-      const cardHeaders = document.querySelectorAll('.connectedSortable .card-header');
-      cardHeaders.forEach((cardHeader) => {
-        cardHeader.style.cursor = 'move';
       });
     </script>
-    <!-- apexcharts -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/apexcharts@3.37.1/dist/apexcharts.min.js"
-      integrity="sha256-+vh8GkaU7C9/wbSLIcwq82tQ2wTf44aOHA8HlBMwRI8="
-      crossorigin="anonymous"
-    ></script>
-    <!-- ChartJS -->
-    <script>
-      // NOTICE!! DO NOT USE ANY OF THIS JAVASCRIPT
-      // IT'S ALL JUST JUNK FOR DEMO
-      // ++++++++++++++++++++++++++++++++++++++++++
+    <!--end::Edit User Modal Script-->
 
-      const sales_chart_options = {
-        series: [
-          {
-            name: 'Digital Goods',
-            data: [28, 48, 40, 19, 86, 27, 90],
-          },
-          {
-            name: 'Electronics',
-            data: [65, 59, 80, 81, 56, 55, 40],
-          },
-        ],
-        chart: {
-          id: 'revenue-chart',
-          height: 300,
-          type: 'area',
-          toolbar: {
-            show: false,
-          },
-        },
-        legend: {
-          show: false,
-        },
-        colors: ['#0d6efd', '#20c997'],
-        dataLabels: {
-          enabled: false,
-        },
-        stroke: {
-          curve: 'smooth',
-        },
-        xaxis: {
-          type: 'datetime',
-          categories: [
-            '2023-01-01',
-            '2023-02-01',
-            '2023-03-01',
-            '2023-04-01',
-            '2023-05-01',
-            '2023-06-01',
-            '2023-07-01',
-          ],
-        },
-        tooltip: {
-          x: {
-            format: 'MMMM yyyy',
-          },
-        },
-      };
-
-      const sales_chart = new ApexCharts(
-        document.querySelector('#revenue-chart'),
-        sales_chart_options,
-      );
-      sales_chart.render();
-    </script>
-    <!-- jsvectormap -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/js/jsvectormap.min.js"
-      integrity="sha256-/t1nN2956BT869E6H4V1dnt0X5pAQHPytli+1nTZm2Y="
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/maps/world.js"
-      integrity="sha256-XPpPaZlU8S/HWf7FZLAncLg2SAkP8ScUTII89x9D3lY="
-      crossorigin="anonymous"
-    ></script>
-    <!-- jsvectormap -->
-    <script>
-      // World map by jsVectorMap
-      new jsVectorMap({
-        selector: '#world-map',
-        map: 'world',
-      });
-
-      // Sparkline charts
-      const option_sparkline1 = {
-        series: [
-          {
-            data: [1000, 1200, 920, 927, 931, 1027, 819, 930, 1021],
-          },
-        ],
-        chart: {
-          id: 'sparkline-1',
-          type: 'area',
-          height: 50,
-          sparkline: {
-            enabled: true,
-          },
-        },
-        stroke: {
-          curve: 'straight',
-        },
-        fill: {
-          opacity: 0.3,
-        },
-        yaxis: {
-          min: 0,
-        },
-        colors: ['#DCE6EC'],
-      };
-
-      const sparkline1 = new ApexCharts(document.querySelector('#sparkline-1'), option_sparkline1);
-      sparkline1.render();
-
-      const option_sparkline2 = {
-        series: [
-          {
-            data: [515, 519, 520, 522, 652, 810, 370, 627, 319, 630, 921],
-          },
-        ],
-        chart: {
-          id: 'sparkline-2',
-          type: 'area',
-          height: 50,
-          sparkline: {
-            enabled: true,
-          },
-        },
-        stroke: {
-          curve: 'straight',
-        },
-        fill: {
-          opacity: 0.3,
-        },
-        yaxis: {
-          min: 0,
-        },
-        colors: ['#DCE6EC'],
-      };
-
-      const sparkline2 = new ApexCharts(document.querySelector('#sparkline-2'), option_sparkline2);
-      sparkline2.render();
-
-      const option_sparkline3 = {
-        series: [
-          {
-            data: [15, 19, 20, 22, 33, 27, 31, 27, 19, 30, 21],
-          },
-        ],
-        chart: {
-          id: 'sparkline-3',
-          type: 'area',
-          height: 50,
-          sparkline: {
-            enabled: true,
-          },
-        },
-        stroke: {
-          curve: 'straight',
-        },
-        fill: {
-          opacity: 0.3,
-        },
-        yaxis: {
-          min: 0,
-        },
-        colors: ['#DCE6EC'],
-      };
-
-      const sparkline3 = new ApexCharts(document.querySelector('#sparkline-3'), option_sparkline3);
-      sparkline3.render();
-    </script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

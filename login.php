@@ -15,7 +15,7 @@ unset($_SESSION['login_error']);
   <!--begin::Head-->
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Room Management System | Login Page</title>
+    <title>GameShop | Login Page</title>
 
     <!--begin::Theme Init (prevents flash of incorrect theme on load, #6043)-->
     <script>

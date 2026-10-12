@@ -11,6 +11,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $username = trim($_POST['username'] ?? '');
 $password = $_POST['password'] ?? '';
 $confirmPassword = $_POST['confirm_password'] ?? '';
+$role = $_POST['role'] ?? 'user';
+
+// Validate role against the allowed enum values.
+$allowedRoles = ['user', 'merchant', 'admin'];
+if (!in_array($role, $allowedRoles, true)) {
+    $role = 'user';
+}
 
 if ($username === '' || strlen($username) > 100 || strlen($password) < 6) {
     header('Location: users.php?status=invalid');
@@ -24,8 +31,8 @@ if ($password !== $confirmPassword) {
 
 // Hash before saving; the real password is never stored in the database.
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-$stmt = mysqli_prepare($conn, 'INSERT INTO tb_users (username, password_hash) VALUES (?, ?)');
-mysqli_stmt_bind_param($stmt, 'ss', $username, $passwordHash);
+$stmt = mysqli_prepare($conn, 'INSERT INTO tb_users (username, password_hash, role) VALUES (?, ?, ?)');
+mysqli_stmt_bind_param($stmt, 'sss', $username, $passwordHash, $role);
 
 try {
     mysqli_stmt_execute($stmt);
