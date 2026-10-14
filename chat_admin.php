@@ -12,7 +12,12 @@ $msg_success = '';
 $msg_error = '';
 
 $room_id = (int)($_GET['room_id'] ?? 0);
-
+$games_list = [];
+$games_query = mysqli_query($conn, "SELECT game_id, game_name FROM tb_games ORDER BY game_name ASC");
+if ($games_query) 
+    while ($g = mysqli_fetch_assoc($games_query)) {
+        $games_list[] = $g;
+    }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_message'])) {
     $msg_text = trim($_POST['message_text'] ?? '');
     if ($msg_text !== '' && $room_id > 0) {
