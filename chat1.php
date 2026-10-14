@@ -1,21 +1,21 @@
 <?php
 require_once __DIR__ . '/config/auth.php';
 require_once __DIR__ . '/config/connectDB.php';
-
+/** @var mysqli $conn **/
 start_app_session();
 require_login();
 
-// 1. กำหนดตัวแปรสำหรับแสดงชื่อผู้ใช้ปัจจุบัน
+
 $current_user_id = $_SESSION['user_id'] ?? 0;
 $current_username = $_SESSION['username'] ?? 'User';
 
-// 2. กำหนดตัวแปร Alert ให้มีค่าเริ่มต้น
+
 $msg_success = '';
 $msg_error = '';
 
 $room_id = (int)($_GET['room_id'] ?? 0);
 
-// 3. บันทึกข้อความใหม่ (กรณีส่งแชท)
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_message'])) {
     $msg_text = trim($_POST['message_text'] ?? '');
     if ($msg_text !== '' && $room_id > 0) {
@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_message'])) {
     }
 }
 
-// 4. ดึงรายการข้อความในห้องแชท (กรณีมี room_id)
+
 $messages = [];
 if ($room_id > 0) {
     $sql_msg = "SELECT m.*, u.username 
@@ -44,7 +44,7 @@ if ($room_id > 0) {
     }
 }
 
-// 5. ดึงรายการห้องแชททั้งหมดของผู้ใช้ปัจจุบัน (เพื่อแสดงหน้ารวมแชท)
+
 $chat_rooms_list = [];
 $sql_rooms = "SELECT cr.*, 
                      u1.username AS buyer_name, 
@@ -678,7 +678,7 @@ while ($r = mysqli_fetch_assoc($res_rooms)) {
             document.getElementById('edit_post_price').value = button.getAttribute('data-post-price') || '';
             document.getElementById('edit_status').value = button.getAttribute('data-post-status') || 'availble';
 
-            // แสดง preview รูปภาพปัจจุบัน
+            
             const currentImg = button.getAttribute('data-post-img') || '';
             const editPreview = document.getElementById('editImgPreview');
             const editPreviewImg = document.getElementById('editImgPreviewImg');
@@ -690,12 +690,12 @@ while ($r = mysqli_fetch_assoc($res_rooms)) {
               editPreview.style.display = 'none';
             }
 
-            // รีเซ็ต file input
+            
             document.getElementById('edit_post_img').value = '';
           });
         }
 
-        // Preview รูปภาพที่เลือกในฟอร์มสร้างโพสต์
+  
         const createImgInput = document.getElementById('create_post_img');
         if (createImgInput) {
           createImgInput.addEventListener('change', function () {
@@ -715,7 +715,7 @@ while ($r = mysqli_fetch_assoc($res_rooms)) {
           });
         }
 
-        // Preview รูปภาพที่เลือกในฟอร์มแก้ไขโพสต์
+        
         const editImgInput = document.getElementById('edit_post_img');
         if (editImgInput) {
           editImgInput.addEventListener('change', function () {
@@ -735,7 +735,7 @@ while ($r = mysqli_fetch_assoc($res_rooms)) {
           });
         }
 
-        // รีเซ็ตฟอร์มสร้างโพสต์เมื่อปิด modal
+        
         const createPostModal = document.getElementById('createPostModal');
         if (createPostModal) {
           createPostModal.addEventListener('hidden.bs.modal', function () {

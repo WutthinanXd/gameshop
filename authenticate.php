@@ -17,7 +17,6 @@ if ($username === '' || $password === '') {$_SESSION['login_error'] = 'กรุ
     exit;
 }
 
-// เพิ่มการดึงข้อมูล `role` ออกมาจากฐานข้อมูล
 $stmt = mysqli_prepare($conn, 'SELECT user_id, username, password_hash, role FROM tb_users WHERE username = ? LIMIT 1');
 mysqli_stmt_bind_param($stmt, 's',$username);
 mysqli_stmt_execute($stmt);
@@ -31,9 +30,9 @@ if (!$user || !password_verify($password, $user['password_hash'])) {$_SESSION['l
 session_regenerate_id(true);
 $_SESSION['user_id'] = (int)$user['user_id'];
 $_SESSION['username'] =$user['username'];
-$_SESSION['role'] =$user['role']; // แนะนำให้เก็บ session role ไว้ใช้งานเพิ่มเติม
+$_SESSION['role'] =$user['role']; 
 
-// เช็คสิทธิ์และแยกหน้า Redirect
+
 if ($user['role'] === 'admin') {
     header('Location: dashboard.php');
 } else {

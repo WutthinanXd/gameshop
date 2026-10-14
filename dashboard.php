@@ -8,7 +8,6 @@ require_login();
 $current_user_id = $_SESSION['user_id'] ?? 0;
 $current_username = $_SESSION['username'] ?? 'User';
 
-// ดึง Role ของผู้ใช้ปัจจุบัน
 $role = 'user';
 $user_stmt = mysqli_prepare($conn, "SELECT role FROM tb_users WHERE user_id = ? LIMIT 1");
 mysqli_stmt_bind_param($user_stmt, "i", $current_user_id);
@@ -18,7 +17,6 @@ if ($u = mysqli_fetch_assoc($user_res)) {
     $role = $u['role'];
 }
 
-// ตรวจสอบสิทธิ์ ถ้าไม่ใช่ admin ให้เด้งกลับไป index.php
 if ($role !== 'admin') {
     header('Location: index.php');
     exit;
@@ -27,7 +25,6 @@ if ($role !== 'admin') {
 $msg_success = '';
 $msg_error = '';
 
-// การจัดการโพสต์สำหรับ Admin (สร้าง)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_post') {
     $game_id    = (int)($_POST['game_id'] ?? 0);
     $post_title = trim($_POST['post_title'] ?? '');
@@ -71,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// การจัดการโพสต์สำหรับ Admin (แก้ไขโพสต์ของใครก็ได้)
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_post') {
     $edit_post_id = (int)($_POST['edit_post_id'] ?? 0);
     
@@ -81,12 +78,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $check_res = mysqli_stmt_get_result($check_stmt);
     $post_owner = mysqli_fetch_assoc($check_res);
     
-    if ($post_owner) { // Admin สามารถแก้ไขได้หมด
+    if ($post_owner) { 
         $edit_game_id    = (int)($_POST['edit_game_id'] ?? 0);
         $edit_post_title = trim($_POST['edit_post_title'] ?? '');
         $edit_post_price = (float)($_POST['edit_post_price'] ?? 0);
         $edit_post_detail= trim($_POST['edit_post_detail'] ?? '');
-        $edit_post_img   = $post_owner['post_img']; // คงรูปเดิมไว้ก่อน
+        $edit_post_img   = $post_owner['post_img']; 
         $edit_status     = trim($_POST['edit_status'] ?? 'availble');
 
         if (isset($_FILES['edit_post_img']) && $_FILES['edit_post_img']['error'] === UPLOAD_ERR_OK) {
@@ -131,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// การจัดการโพสต์สำหรับ Admin (ลบโพสต์ของใครก็ได้)
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_post') {
     $del_post_id = (int)($_POST['delete_post_id'] ?? 0);
     
@@ -141,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $check_res = mysqli_stmt_get_result($check_stmt);
     $post_owner = mysqli_fetch_assoc($check_res);
     
-    if ($post_owner) { // Admin สามารถลบได้หมด
+    if ($post_owner) { 
         $del_stmt = mysqli_prepare($conn, "DELETE FROM tb_posts WHERE post_id = ?");
         mysqli_stmt_bind_param($del_stmt, "i", $del_post_id);
         
@@ -494,6 +491,7 @@ $posts_result = mysqli_query($conn, $sql_posts);
                         <div class="post-price-tag">
                           <i class="bi bi-tag-fill"></i> ฿<?= number_format($post['post_price'], 2) ?>
                         </div>
+                        
                       </div>
                       <!--end::Card Body-->
                     </div>

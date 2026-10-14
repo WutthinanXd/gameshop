@@ -16,9 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
-    $role = $_POST['role'] ?? 'user'; // รับค่า role จากฟอร์ม
+    $role = $_POST['role'] ?? 'user'; 
 
-    // ตรวจสอบความถูกต้องของ role
+    
     if (!in_array($role, ['user', 'merchant'])) {
         $role = 'user';
     }
@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 
-        // บันทึกข้อมูลโดยใส่ตัวแปร $role ที่ได้รับมา
+        
         $stmt = mysqli_prepare($conn, 'INSERT INTO tb_users (username, password_hash, email, role) VALUES (?, ?, ?, ?)');
         mysqli_stmt_bind_param($stmt, 'ssss', $username, $passwordHash, $email, $role);
 
