@@ -425,48 +425,72 @@ $posts_result = mysqli_query($conn, $sql_posts);
                       <!--begin::Card Header-->
                       <div class="card-header d-flex justify-content-between align-items-start">
                         <div class="post-author-info">
-                          <div class="post-author-avatar">
-                            <?= strtoupper(mb_substr($post['seller_name'], 0, 1)) ?>
-                          </div>
-                          <div>
-                            <div class="post-author-name">
-                              <a href="#"><?= htmlspecialchars($post['seller_name']) ?></a>
-                            </div>
-                            <div class="post-meta-info">
-                              Post ID: #<?= $post['post_id'] ?> | Seller ID: <?= $post['seller_id'] ?>
+                        <div class="post-author-avatar">
+                          <?= strtoupper(mb_substr($post['seller_name'], 0, 1)) ?>
+                        </div>
+                        
+                        <!-- เพิ่ม Modal สำหรับดูรายละเอียด (viewPostModal) -->
+                        <div class="modal fade" id="viewPostModal<?= $post['post_id'] ?>" tabindex="-1" aria-labelledby="viewPostLabel<?= $post['post_id'] ?>" aria-hidden="true">
+                          <div class="modal-dialog modal-lg modal-dialog-centered">
+                            <div class="modal-content">
+                              <div class="modal-header">
+                                <h5 class="modal-title" id="viewPostLabel<?= $post['post_id'] ?>">
+                                  <i class="bi bi-info-circle me-2"></i><?= htmlspecialchars($post['post_title']) ?>
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                              </div>
+                              <div class="modal-body">
+                                <?php if (!empty($post['post_img'])): ?>
+                                  <div class="text-center mb-3">
+                                    <img src="<?= htmlspecialchars($post['post_img']) ?>" alt="Post Image" class="img-fluid rounded shadow-sm" style="max-height: 400px; width: 100%; object-fit: contain; background: #000;">
+                                  </div>
+                                <?php endif; ?>
+                                <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+                                  <span class="badge bg-primary fs-6"><i class="bi bi-controller me-1"></i><?= htmlspecialchars($post['game_name']) ?></span>
+                                  <span class="badge <?= $post['status'] === 'availble' ? 'bg-success' : 'bg-danger' ?> fs-6">
+                                    <?= $post['status'] === 'availble' ? 'พร้อมขาย' : 'ขายแล้ว' ?>
+                                  </span>
+                                  <span class="badge bg-warning text-dark fs-6">
+                                    ฿<?= number_format($post['post_price'], 2) ?>
+                                  </span>
+                                </div>
+                                <div class="mb-3">
+                                  <h6 class="fw-bold text-secondary">ผู้ขาย:</h6>
+                                  <p class="mb-1"><i class="bi bi-person-circle me-1"></i><?= htmlspecialchars($post['seller_name']) ?></p>
+                                </div>
+                                <div class="mb-3">
+                                  <h6 class="fw-bold text-secondary">รายละเอียด:</h6>
+                                  <div class="p-3 bg-body-secondary rounded">
+                                    <?= nl2br(htmlspecialchars($post['post_detail'])) ?>
+                                  </div>
+                                </div>
+                              </div>
+                              <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+                                <?php if ($post['seller_id'] != $current_user_id): ?>
+                                  <form method="POST" action="index.php" class="d-inline">
+                                    <input type="hidden" name="action" value="start_chat">
+                                    <input type="hidden" name="post_id" value="<?= $post['post_id'] ?>">
+                                    <input type="hidden" name="seller_id" value="<?= $post['seller_id'] ?>">
+                                    <button type="submit" class="btn btn-primary">
+                                      <i class="bi bi-chat-dots me-1"></i> ติดต่อผู้ขาย
+                                    </button>
+                                  </form>
+                                <?php endif; ?>
+                              </div>
                             </div>
                           </div>
                         </div>
-                        <div class="d-flex align-items-center gap-2">
-                          <span class="post-status-badge <?= $post['status'] === 'availble' ? 'available' : 'sold' ?>">
-                            <i class="bi <?= $post['status'] === 'availble' ? 'bi-check-circle' : 'bi-x-circle' ?>"></i>
-                            <?= $post['status'] === 'availble' ? 'พร้อมขาย' : 'ขายแล้ว' ?>
-                          </span>
-                          <!-- Admin มีสิทธิ์แก้ไข/ลบทุกโพสต์ -->
-                          <div class="post-owner-actions">
-                            <button type="button" class="btn btn-sm btn-outline-warning btn-edit-post"
-                              data-bs-toggle="modal" 
-                              data-bs-target="#editPostModal"
-                              data-post-id="<?= $post['post_id'] ?>"
-                              data-game-id="<?= $post['game_id'] ?>"
-                              data-post-title="<?= htmlspecialchars($post['post_title'], ENT_QUOTES) ?>"
-                              data-post-detail="<?= htmlspecialchars($post['post_detail'], ENT_QUOTES) ?>"
-                              data-post-price="<?= $post['post_price'] ?>"
-                              data-post-img="<?= htmlspecialchars($post['post_img'], ENT_QUOTES) ?>"
-                              data-post-status="<?= $post['status'] ?>"
-                              title="จัดการแก้ไข"
-                            >
-                              <i class="bi bi-pencil"></i>
-                            </button>
-                            <form method="POST" action="dashboard.php" class="d-inline" onsubmit="return confirm('ในฐานะแอดมิน: คุณแน่ใจหรือไม่ที่จะลบโพสต์นี้แบบถาวร?');">
-                              <input type="hidden" name="action" value="delete_post">
-                              <input type="hidden" name="delete_post_id" value="<?= $post['post_id'] ?>">
-                              <button type="submit" class="btn btn-sm btn-outline-danger" title="ลบโพสต์">
-                                <i class="bi bi-trash"></i>
-                              </button>
-                            </form>
+
+                        <div>
+                          <div class="post-author-name">
+                            <a href="#"><?= htmlspecialchars($post['seller_name']) ?></a>
+                          </div>
+                          <div class="post-meta-info">
+                            Post ID: #<?= $post['post_id'] ?> | Seller ID: <?= $post['seller_id'] ?>
                           </div>
                         </div>
+                      </div>
                       </div>
                       <!--end::Card Header-->
 
@@ -491,10 +515,39 @@ $posts_result = mysqli_query($conn, $sql_posts);
                         <div class="post-price-tag">
                           <i class="bi bi-tag-fill"></i> ฿<?= number_format($post['post_price'], 2) ?>
                         </div>
-                        
+                        <div class="card-footer">
+                        <div class="post-actions">
+                          
+                          <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#viewPostModal<?= $post['post_id'] ?>">
+                            <i class="bi bi-eye me-1"></i> ดูรายละเอียด
+                          </button>
+                          
+                          
+                          <?php if ($post['seller_id'] != $current_user_id): ?>
+                            <form method="POST" action="index.php" class="d-inline">
+                              <input type="hidden" name="action" value="start_chat">
+                              <input type="hidden" name="post_id" value="<?= $post['post_id'] ?>">
+                              <input type="hidden" name="seller_id" value="<?= $post['seller_id'] ?>">
+                              <button type="submit" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-chat-dots me-1"></i> ติดต่อ
+                              </button>
+                            </form>
+                          <?php else: ?>
+                            <span class="badge bg-secondary"> โพสต์ของคุณ </span>
+                          <?php endif; ?>
+                        </div>
+                      </div>
                       </div>
                       <!--end::Card Body-->
                     </div>
+                    <!--end::Card Body-->
+                      
+                      <!--begin::Card Footer-->
+                      
+                      <!--end::Card Footer-->
+
+                    </div>
+                  
                   <?php endwhile; ?>
                 <?php else: ?>
                   <div class="card social-feed-card">
